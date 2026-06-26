@@ -1,0 +1,22 @@
+.DS_Store
+
+# Local environment
+.env
+.venv/
+venv/
+
+# Python build/test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Generated runtime data
+cache/
+outputs/
+pdfs/
+
+# Placeholder not needed because examples/sample.pdf is tracked
+examples/.gitkeep
