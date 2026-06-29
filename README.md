@@ -1,6 +1,6 @@
-# Socratic Lecture Tutor CLI
+# Socratic Lecture Tutor
 
-강의 PDF를 Markdown으로 파싱하고, OpenAI-compatible API를 사용해 핵심 개념과 소크라테스식 질문을 생성하는 CLI MVP입니다. 사용자는 터미널에서 자유롭게 답변하고, 앱은 필수 포함 요소 기준으로 답변을 평가한 뒤 부족한 경우 힌트를 제공합니다. 세션 종료 후 요약을 출력하고 로컬 JSON 파일로 저장합니다.
+강의 PDF를 Markdown으로 파싱하고, OpenAI-compatible API를 사용해 핵심 개념과 소크라테스식 질문을 생성하는 학습 도구입니다. CLI와 웹 UI를 모두 제공합니다. 사용자는 자유롭게 답변하고, 앱은 필수 포함 요소 기준으로 답변을 평가한 뒤 부족한 경우 힌트를 제공합니다. 세션 종료 후 요약을 출력하고 로컬 JSON 파일로 저장합니다.
 
 ## Quick Start
 
@@ -18,6 +18,18 @@ cp .env.example .env
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4.1
 ```
+
+웹 UI로 실행하려면 프론트엔드를 빌드한 뒤 FastAPI 서버를 실행합니다.
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+.venv/bin/socratic-tutor-web
+```
+
+브라우저에서 `http://127.0.0.1:8000`을 열면 PDF 업로드, 개념 확인, 문답 세션, 학습 기록서를 한 화면에서 사용할 수 있습니다.
 
 PDF를 넣고 학습 세션을 시작합니다.
 
@@ -93,6 +105,7 @@ PDF 파싱 결과만 확인하고 싶으면 `parse`를 실행합니다.
 | `socratic-tutor start --pdf <path>` | PDF 분석, 개념 추출, 질문 생성, 대화형 학습, 요약 저장까지 실행합니다. |
 | `socratic-tutor parse --pdf <path>` | PDF를 Markdown/JSON으로 변환해 `outputs/`에 저장합니다. |
 | `socratic-tutor inspect --session <path>` | 저장된 세션 JSON을 읽어 요약을 출력합니다. |
+| `socratic-tutor-web` | React 웹 UI와 API 서버를 실행합니다. |
 
 패키지 스크립트 대신 모듈로도 실행할 수 있습니다.
 
