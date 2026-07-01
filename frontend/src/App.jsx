@@ -493,6 +493,7 @@ export function App() {
               <section className="slp-panel slp-panel--upload" aria-label="학습 시작">
                 <SlpCorners/>
                 <div style={{ position: "relative", zIndex: 5 }}>
+                  <div className="parch-stage-ribbon">1단계: 입문</div>
                   <p className="parch-upload-title">지식의 두루마리를 제출하세요</p>
                   <p className="parch-upload-desc">
                     공부할 강의 PDF를 제출하면 소크라테스가 두루마리를 해석하여 핵심 개념을 찾아냅니다.
@@ -504,6 +505,9 @@ export function App() {
                       <FileUp size={24} style={{ opacity: 0.7 }}/>
                       <span>{file ? file.name : "강의 PDF 선택"}</span>
                     </label>
+                    <div className="parch-upload-hint">
+                      여기에 PDF 파일을 드래그하거나 클릭하여 업로드하세요.
+                    </div>
                     <input
                       className="parch-input"
                       value={form.subject}
@@ -535,6 +539,11 @@ export function App() {
                         />
                       </label>
                     </div>
+                    <div className="parch-setting-strip" aria-label="학습 설정 요약">
+                      <span>개념 추출</span>
+                      <span>질문 생성</span>
+                      <span>기록 저장</span>
+                    </div>
                     <button className="srp-submit-button" disabled={busy} type="submit">
                       <svg className="srp-submit-frame" viewBox="0 0 360 58" preserveAspectRatio="none" aria-hidden="true">
                         <use href="#srpSubmitFrame"/>
@@ -557,7 +566,7 @@ export function App() {
               <aside className="start-info">
                 <section className="slp-panel slp-panel--lessons">
                   <SlpCorners/>
-                  <h2 className="slp-panel-title">학습 여정 안내</h2>
+                  <div className="parch-stage-ribbon parch-stage-ribbon--right">학습 여정 안내</div>
                   <svg className="slp-title-divider" aria-hidden="true"><use href="#slpTitleDivider"/></svg>
                   <ul className="journey-step-list">
                     <li className="journey-step-item">
@@ -592,6 +601,9 @@ export function App() {
                 </section>
 
                 <blockquote className="quote-block">
+                  <span className="quote-medallion" aria-hidden="true">
+                    <img src="/theme-assets/medallion.png" alt=""/>
+                  </span>
                   <p>"답을 아는 것이 지혜가 아니라, 올바른 질문을 하는 것이 지혜의 시작이라네."</p>
                   <cite>소크라테스</cite>
                 </blockquote>
