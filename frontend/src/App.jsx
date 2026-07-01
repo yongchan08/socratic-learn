@@ -1,7 +1,10 @@
-import { BookOpen, FileUp, Landmark, Loader2, Search, Send, ScrollText, Scroll } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BookOpen, FileUp, Landmark, Loader2, Search, Send, Settings, ScrollText, Scroll } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
+const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
+const MAX_ATTEMPTS_PER_QUESTION = 3;
 
 const SOCRATES_MOTIONS = {
   talking: {
@@ -54,7 +57,13 @@ export function App() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [showSufficientEvaluation, setShowSufficientEvaluation] = useState(false);
+  const [dismissedTransitionAnswerId, setDismissedTransitionAnswerId] = useState(null);
+  const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+  const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.32);
+  const [questionSoundVolume, setQuestionSoundVolume] = useState(0.72);
+  const backgroundMusicRef = useRef(null);
+  const questionChangeSoundRef = useRef(null);
+  const previousQuestionIdRef = useRef(null);
 
   const concepts = state?.session?.concepts ?? [];
   const answers = state?.session?.answers ?? [];
@@ -62,10 +71,64 @@ export function App() {
   const lastAnswer = state?.last_answer;
   const answeredQuestion = lastAnswer ? state?.session?.questions?.find((question) => question.question_id === lastAnswer.question_id) : null;
   const progress = state ? Math.round((state.current_index / Math.max(state.total_questions, 1)) * 100) : 0;
-  const socratesMotion = getSocratesMotion(lastAnswer?.evaluation?.status);
-  const socratesMotionKey = lastAnswer?.answer_id ?? currentQuestion?.question_id ?? "start";
-  const adviceText = getAdviceText(lastAnswer?.evaluation);
-  const showEvaluationMessage = lastAnswer?.evaluation && !state.completed && (lastAnswer.evaluation.status !== "sufficient" || showSufficientEvaluation);
+  const lastAnswerIsForCurrentQuestion = lastAnswer?.question_id === currentQuestion?.question_id;
+  const showFollowupEvaluation =
+    lastAnswer?.evaluation && lastAnswerIsForCurrentQuestion && lastAnswer.evaluation.status !== "sufficient";
+  const showTransitionEvaluation =
+    lastAnswer?.evaluation &&
+    lastAnswer.evaluation.next_action === "next_question" &&
+    lastAnswer.answer_text !== "/skip" &&
+    !lastAnswerIsForCurrentQuestion &&
+    dismissedTransitionAnswerId !== lastAnswer.answer_id;
+  const showEvaluationMessage = Boolean(
+    showTransitionEvaluation || (!state?.completed && showFollowupEvaluation),
+  );
+  const visibleQuestionId = showEvaluationMessage ? lastAnswer?.question_id : currentQuestion?.question_id;
+  const socratesMotion = showEvaluationMessage ? getSocratesMotion(lastAnswer?.evaluation?.status) : SOCRATES_MOTIONS.talking;
+  const socratesMotionKey = showEvaluationMessage ? lastAnswer?.answer_id : currentQuestion?.question_id ?? "start";
+  const adviceText = showEvaluationMessage ? getAdviceText(lastAnswer?.evaluation) : null;
+  const visibleAttemptCount = showEvaluationMessage
+    ? lastAnswer?.attempt_number ?? 0
+    : answers.filter((item) => item.question_id === currentQuestion?.question_id).length;
+
+  useEffect(() => {
+    const backgroundMusic = new Audio(BACKGROUND_MUSIC_SRC);
+    const questionChangeSound = new Audio(QUESTION_CHANGE_SOUND_SRC);
+
+    backgroundMusic.loop = true;
+    backgroundMusic.volume = backgroundMusicVolume;
+    questionChangeSound.volume = questionSoundVolume;
+
+    backgroundMusicRef.current = backgroundMusic;
+    questionChangeSoundRef.current = questionChangeSound;
+
+    const startBackgroundMusic = () => {
+      backgroundMusic.play().catch(() => {});
+    };
+
+    window.addEventListener("pointerdown", startBackgroundMusic, { once: true });
+    window.addEventListener("keydown", startBackgroundMusic, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", startBackgroundMusic);
+      window.removeEventListener("keydown", startBackgroundMusic);
+      backgroundMusic.pause();
+      backgroundMusicRef.current = null;
+      questionChangeSoundRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.volume = backgroundMusicVolume;
+    }
+  }, [backgroundMusicVolume]);
+
+  useEffect(() => {
+    if (questionChangeSoundRef.current) {
+      questionChangeSoundRef.current.volume = questionSoundVolume;
+    }
+  }, [questionSoundVolume]);
 
   const currentConcept = useMemo(() => {
     if (!currentQuestion) return null;
@@ -73,10 +136,26 @@ export function App() {
   }, [concepts, currentQuestion]);
 
   useEffect(() => {
-    if (!showSufficientEvaluation) return undefined;
-    const timeout = window.setTimeout(() => setShowSufficientEvaluation(false), 1800);
-    return () => window.clearTimeout(timeout);
-  }, [showSufficientEvaluation, lastAnswer?.answer_id]);
+    const currentQuestionId = visibleQuestionId ?? null;
+
+    if (!currentQuestionId) {
+      previousQuestionIdRef.current = null;
+      return;
+    }
+
+    if (!previousQuestionIdRef.current) {
+      previousQuestionIdRef.current = currentQuestionId;
+      return;
+    }
+    if (previousQuestionIdRef.current === currentQuestionId) return;
+    previousQuestionIdRef.current = currentQuestionId;
+
+    const questionChangeSound = questionChangeSoundRef.current;
+    if (!questionChangeSound) return;
+
+    questionChangeSound.currentTime = 0;
+    questionChangeSound.play().catch(() => {});
+  }, [visibleQuestionId]);
 
   async function startSession(event) {
     event.preventDefault();
@@ -98,6 +177,7 @@ export function App() {
     }
     try {
       const next = await request("/api/sessions", { method: "POST", body: payload });
+      setDismissedTransitionAnswerId(null);
       setState(next);
       setAnswer("");
     } catch (err) {
@@ -118,7 +198,7 @@ export function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answer }),
       });
-      setShowSufficientEvaluation(next.last_answer?.evaluation?.status === "sufficient");
+      setDismissedTransitionAnswerId(null);
       setState(next);
       setAnswer("");
     } catch (err) {
@@ -134,7 +214,7 @@ export function App() {
     setError("");
     try {
       const next = await request(`/api/sessions/${state.session.session_id}/${action}`, { method: "POST" });
-      setShowSufficientEvaluation(false);
+      setDismissedTransitionAnswerId(null);
       setState(next);
       setAnswer("");
     } catch (err) {
@@ -197,11 +277,23 @@ export function App() {
     </form>
   );
 
+  const audioSettings = (
+    <AudioSettings
+      isOpen={audioSettingsOpen}
+      backgroundMusicVolume={backgroundMusicVolume}
+      questionSoundVolume={questionSoundVolume}
+      onToggle={() => setAudioSettingsOpen((current) => !current)}
+      onBackgroundMusicVolumeChange={setBackgroundMusicVolume}
+      onQuestionSoundVolumeChange={setQuestionSoundVolume}
+    />
+  );
+
   if (!state) {
     return (
       <main className="start-screen">
         <header className="start-topbar">
           <span>Socratic Lecture Tutor</span>
+          {audioSettings}
         </header>
         <section className="start-stage">
           <aside className="parchment upload-scroll">
@@ -244,6 +336,7 @@ export function App() {
           <button type="button"><Landmark size={18} /> 학당</button>
           <button type="button"><ScrollText size={18} /> 기록서</button>
           <button type="button">도움말</button>
+          {audioSettings}
         </nav>
       </header>
 
@@ -271,8 +364,8 @@ export function App() {
         <aside className="journey-status dark-panel">
           <div className="dark-title">오늘의 여정</div>
           <div className="journey-row">
-            <span>진행 중인 관문</span>
-            <strong>{Math.min(state.current_index + 1, state.total_questions)} / {state.total_questions}</strong>
+            <span>완료한 관문</span>
+            <strong>{Math.min(state.current_index, state.total_questions)} / {state.total_questions}</strong>
           </div>
           <div className="study-progress"><span style={{ width: `${progress}%` }} /></div>
           <div className="journey-row">
@@ -289,17 +382,24 @@ export function App() {
           <AnimatedSocrates motion={socratesMotion} motionKey={socratesMotionKey} />
         </div>
 
-        <section className="question-bubble">
-          <div className="scroll-tab">소크라테스</div>
-          {showEvaluationMessage ? (
-            <div className="evaluation-message">
-              <strong>{Math.round(lastAnswer.evaluation.score * 100)}점 · {statusLabel(lastAnswer.evaluation.status)}</strong>
-              <p>{lastAnswer.evaluation.feedback_to_student}</p>
-            </div>
-          ) : (
-            <p>{state.completed ? "오늘의 학습 여정이 끝났네. 기록서를 살펴보게." : currentQuestion?.question}</p>
+        <div className="question-stack">
+          <section className={showEvaluationMessage ? "question-bubble evaluation" : "question-bubble"}>
+            <div className="scroll-tab">소크라테스</div>
+            {showEvaluationMessage ? (
+              <div className="evaluation-message">
+                <strong>{Math.round(lastAnswer.evaluation.score * 100)}점 · {statusLabel(lastAnswer.evaluation.status)}</strong>
+                <p>{lastAnswer.evaluation.feedback_to_student}</p>
+              </div>
+            ) : (
+              <p>{state.completed ? "오늘의 학습 여정이 끝났네. 기록서를 살펴보게." : currentQuestion?.question}</p>
+            )}
+          </section>
+          {showTransitionEvaluation && (
+            <button type="button" className="evaluation-next" onClick={() => setDismissedTransitionAnswerId(lastAnswer.answer_id)}>
+              {state.completed ? "기록서 보기" : "다음 질문으로"}
+            </button>
           )}
-        </section>
+        </div>
 
         {adviceText && (
           <section className="advice-panel dark-panel">
@@ -309,10 +409,20 @@ export function App() {
         )}
 
         <section className="answer-panel parchment">
-          {!state.completed && currentQuestion && (
+          {!state.completed && currentQuestion && !showTransitionEvaluation && (
             <form className="answer-form" onSubmit={submitAnswer}>
-              <h2>그대의 답변을 입력하세요.</h2>
-              <p>완벽하지 않아도 괜찮습니다. 생각을 드러내는 것이 먼저입니다.</p>
+              <div className="answer-head">
+                <h2>그대의 답변을 입력하세요.</h2>
+                <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
+              </div>
+              {visibleAttemptCount > 0 ? (
+                <div className="answer-question">
+                  <strong>질문</strong>
+                  <p>{currentQuestion.question}</p>
+                </div>
+              ) : (
+                <p>완벽하지 않아도 괜찮습니다. 생각을 드러내는 것이 먼저입니다.</p>
+              )}
               <textarea
                 value={answer}
                 onChange={(event) => setAnswer(event.target.value)}
@@ -330,9 +440,10 @@ export function App() {
             </form>
           )}
 
-          {lastAnswer?.evaluation && !state.completed && (
-            <div className="original-question">
-              <strong>원래 질문</strong>
+          {showTransitionEvaluation && answeredQuestion && (
+            <div className="transition-question">
+              <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
+              <strong>질문</strong>
               <p>{answeredQuestion?.question}</p>
             </div>
           )}
@@ -367,6 +478,50 @@ function SummaryList({ title, items }) {
       <h3>{title}</h3>
       {items.length ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">기록 없음</p>}
     </section>
+  );
+}
+
+function AudioSettings({
+  isOpen,
+  backgroundMusicVolume,
+  questionSoundVolume,
+  onToggle,
+  onBackgroundMusicVolumeChange,
+  onQuestionSoundVolumeChange,
+}) {
+  return (
+    <div className="audio-settings">
+      <button type="button" className="audio-settings-toggle" onClick={onToggle} aria-expanded={isOpen} aria-label="음량 설정">
+        <Settings size={18} />
+        설정
+      </button>
+      {isOpen && (
+        <div className="audio-settings-panel">
+          <label>
+            배경음악
+            <span>{Math.round(backgroundMusicVolume * 100)}</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(backgroundMusicVolume * 100)}
+              onChange={(event) => onBackgroundMusicVolumeChange(Number(event.target.value) / 100)}
+            />
+          </label>
+          <label>
+            효과음
+            <span>{Math.round(questionSoundVolume * 100)}</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(questionSoundVolume * 100)}
+              onChange={(event) => onQuestionSoundVolumeChange(Number(event.target.value) / 100)}
+            />
+          </label>
+        </div>
+      )}
+    </div>
   );
 }
 
