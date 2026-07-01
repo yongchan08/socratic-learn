@@ -47,6 +47,79 @@ const initialForm = {
   model: "",
 };
 
+const forcedStudyState = {
+  session: {
+    session_id: "local-preview",
+    concepts: [
+      {
+        concept_id: "concept-1",
+        title: "소크라테스식 질문",
+        summary: "답을 직접 제시하기보다 질문을 통해 사고를 정교하게 만드는 학습 방식입니다.",
+        importance: "개념을 자신의 언어로 설명하게 만들어 이해의 빈틈을 드러냅니다.",
+        source_pages: [1],
+        evidence_from_material: "질문과 답변을 반복하며 핵심 개념을 점검합니다.",
+      },
+      {
+        concept_id: "concept-2",
+        title: "핵심 개념 추출",
+        summary: "강의 자료에서 학습자가 반드시 이해해야 할 중심 내용을 고르는 과정입니다.",
+        importance: "복잡한 강의 내용을 작은 관문으로 나누어 학습 부담을 줄입니다.",
+        source_pages: [2],
+        evidence_from_material: "PDF 분석 결과를 바탕으로 주요 개념을 구성합니다.",
+      },
+      {
+        concept_id: "concept-3",
+        title: "답변 평가",
+        summary: "학습자의 답변이 필수 요소를 포함하는지 확인하고 피드백합니다.",
+        importance: "틀린 지점을 바로 드러내기보다 다시 생각할 단서를 제공합니다.",
+        source_pages: [3],
+        evidence_from_material: "답변의 충분성, 누락, 오개념을 평가합니다.",
+      },
+    ],
+    questions: [
+      {
+        question_id: "question-1",
+        concept_id: "concept-1",
+        question: "그대가 이해한 소크라테스식 질문이란 무엇인가? 단순한 설명과 어떤 점에서 다른지 말해보게.",
+        expected_elements: ["질문 중심", "자기 설명", "이해 점검"],
+        source_pages: [1],
+      },
+      {
+        question_id: "question-2",
+        concept_id: "concept-2",
+        question: "강의 PDF에서 핵심 개념을 먼저 찾는 일이 왜 학습 여정을 짧고 선명하게 만드는가?",
+        expected_elements: ["핵심 개념", "학습 부담", "우선순위"],
+        source_pages: [2],
+      },
+      {
+        question_id: "question-3",
+        concept_id: "concept-3",
+        question: "답변 평가가 정답 확인에 그치지 않고 다음 질문을 만드는 이유는 무엇인가?",
+        expected_elements: ["피드백", "후속 질문", "개념 보완"],
+        source_pages: [3],
+      },
+    ],
+    answers: [],
+    summary: null,
+  },
+  current_question: {
+    question_id: "question-1",
+    concept_id: "concept-1",
+    question: "그대가 이해한 소크라테스식 질문이란 무엇인가? 단순한 설명과 어떤 점에서 다른지 말해보게.",
+    expected_elements: ["질문 중심", "자기 설명", "이해 점검"],
+    source_pages: [1],
+  },
+  current_index: 0,
+  total_questions: 3,
+  completed: false,
+  last_answer: null,
+};
+
+function getInitialState() {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("forceStudy") === "1" ? forcedStudyState : null;
+}
+
 /* ── SVG defs (ornaments) ────────────────────────────────────────────────── */
 
 function SvgDefs() {
@@ -336,7 +409,7 @@ function AnimatedSocrates({ motion, motionKey }) {
 export function App() {
   const [file, setFile] = useState(null);
   const [form, setForm] = useState(initialForm);
-  const [state, setState] = useState(null);
+  const [state, setState] = useState(getInitialState);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -367,8 +440,6 @@ export function App() {
     dismissedTransitionAnswerId !== lastAnswer.answer_id;
   const showEvaluationMessage = Boolean(showTransitionEvaluation || (!state?.completed && showFollowupEvaluation));
   const visibleQuestionId = showEvaluationMessage ? lastAnswer?.question_id : currentQuestion?.question_id;
-  const socratesMotion = showEvaluationMessage ? getSocratesMotion(lastAnswer?.evaluation?.status) : SOCRATES_MOTIONS.talking;
-  const socratesMotionKey = showEvaluationMessage ? lastAnswer?.answer_id : currentQuestion?.question_id ?? "start";
   const adviceText = showEvaluationMessage ? getAdviceText(lastAnswer?.evaluation) : null;
   const visibleAttemptCount = showEvaluationMessage
     ? (lastAnswer?.attempt_number ?? 0)
@@ -635,7 +706,7 @@ export function App() {
 
           {/* Socrates character */}
           <div className="study-socrates">
-            <AnimatedSocrates motion={socratesMotion} motionKey={socratesMotionKey}/>
+            <img src="/theme-assets/socrates.png" alt="AI 소크라테스"/>
           </div>
 
           <div className="app-body">
@@ -758,8 +829,8 @@ export function App() {
                         <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
                         {visibleAttemptCount > 0 ? (
                           <div style={{ margin: "8px 0 10px", padding: "8px 10px", background: "rgba(0,0,0,0.06)", borderRadius: 4, borderLeft: "2px solid rgba(99,75,42,.4)" }}>
-                            <p style={{ margin: "0 0 2px", color: "#5b4020", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>질문</p>
-                            <p style={{ margin: 0, color: "#3a260f", fontSize: 12.5, lineHeight: 1.55 }}>{currentQuestion.question}</p>
+                            <p style={{ margin: "0 0 4px", color: "#5b4020", fontSize: 14, fontWeight: 760, letterSpacing: "0.04em" }}>질문</p>
+                            <p style={{ margin: 0, color: "#3a260f", fontSize: 16, lineHeight: 1.58, fontWeight: 620 }}>{currentQuestion.question}</p>
                           </div>
                         ) : (
                           <p className="srp-answer-copy">완벽하지 않아도 괜찮습니다.<br/>생각을 드러내는 것이 먼저입니다.</p>
@@ -797,8 +868,8 @@ export function App() {
                         </div>
                         <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
                         <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(0,0,0,0.06)", borderRadius: 4, borderLeft: "2px solid rgba(99,75,42,.4)" }}>
-                          <p style={{ margin: "0 0 2px", color: "#5b4020", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>질문</p>
-                          <p style={{ margin: 0, color: "#3a260f", fontSize: 12.5, lineHeight: 1.55 }}>{answeredQuestion.question}</p>
+                          <p style={{ margin: "0 0 4px", color: "#5b4020", fontSize: 14, fontWeight: 760, letterSpacing: "0.04em" }}>질문</p>
+                          <p style={{ margin: 0, color: "#3a260f", fontSize: 16, lineHeight: 1.58, fontWeight: 620 }}>{answeredQuestion.question}</p>
                         </div>
                       </div>
                     )}
