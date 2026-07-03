@@ -694,11 +694,6 @@ export function App() {
                         분석 시작
                       </span>
                     </button>
-                    {busy && (
-                      <div className="loading-reassurance" role="status" aria-live="polite">
-                        📖 파일이 크면 시간이 걸릴 수 있어요. 소크라테스가 열심히 읽는 중이니 잠시만 기다려 주세요!
-                      </div>
-                    )}
                     {busy && loadingSteps.length > 0 && (
                       <div className="loading-steps" aria-live="polite">
                         {loadingSteps.map((step, i) => (
@@ -712,9 +707,15 @@ export function App() {
                       </div>
                     )}
                   </form>
-                  <div className="parch-notice">
-                    텍스트가 포함된 PDF 파일만 지원됩니다. 스캔 이미지 PDF는 분석이 어려울 수 있습니다.
-                  </div>
+                  {busy ? (
+                    <div className="loading-reassurance" role="status" aria-live="polite">
+                      📖 파일이 크면 시간이 걸릴 수 있어요. 소크라테스가 열심히 읽는 중이니 잠시만 기다려 주세요!
+                    </div>
+                  ) : (
+                    <div className="parch-notice">
+                      텍스트가 포함된 PDF 파일만 지원됩니다. 스캔 이미지 PDF는 분석이 어려울 수 있습니다.
+                    </div>
+                  )}
                 </div>
               </section>
 
