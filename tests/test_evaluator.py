@@ -6,7 +6,7 @@ class FakeLLMClient:
     def __init__(self, payload):
         self.payload = payload
 
-    def complete_json(self, system_prompt: str, user_prompt: str, max_retries: int = 2) -> dict:
+    def complete_json(self, system_prompt: str, user_prompt: str, json_repair_retries: int = 1) -> dict:
         return self.payload
 
 

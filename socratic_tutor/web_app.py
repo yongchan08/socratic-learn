@@ -10,7 +10,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,14 @@ app.add_middleware(
 
 class AnswerRequest(BaseModel):
     answer: str = Field(min_length=1)
+
+
+@app.get("/api/health")
+def health() -> JSONResponse:
+    return JSONResponse(
+        content={"status": "ok"},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def save_validated_pdf_upload(pdf: UploadFile, target: Path) -> None:

@@ -1,5 +1,6 @@
 from io import BytesIO
 import asyncio
+import json
 import queue
 
 import pytest
@@ -8,6 +9,13 @@ from fastapi import HTTPException, UploadFile
 from socratic_tutor.web_app import MAX_UPLOAD_BYTES, save_validated_pdf_upload, stream_queue_events
 from socratic_tutor import web_app
 from socratic_tutor.web_service import WebStudyError
+
+
+def test_health_returns_uncached_ok_response():
+    response = web_app.health()
+
+    assert response.headers["cache-control"] == "no-store"
+    assert json.loads(response.body) == {"status": "ok"}
 
 
 def test_save_validated_pdf_upload_streams_valid_file(tmp_path):

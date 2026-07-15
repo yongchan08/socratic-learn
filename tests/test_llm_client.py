@@ -19,8 +19,8 @@ def test_llm_client_sets_explicit_connection_and_response_timeouts(monkeypatch):
 
     timeout = FakeOpenAI.kwargs["timeout"]
     assert timeout.connect == 10.0
-    assert timeout.read == 60.0
-    assert FakeOpenAI.kwargs["max_retries"] == 2
+    assert timeout.read == 45.0
+    assert FakeOpenAI.kwargs["max_retries"] == 1
 
 
 class SequenceCompletions:

@@ -17,7 +17,7 @@ from .storage import cache_path, compute_file_hash, ensure_dir, legacy_cache_pat
 from .utils import truncate_markdown, utc_now
 
 
-QUESTION_GENERATION_TIMEOUT_SECONDS = 180.0
+QUESTION_GENERATION_TIMEOUT_SECONDS = 120.0
 
 
 class QuestionGenerationTimeoutError(RuntimeError):
