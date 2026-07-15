@@ -59,6 +59,29 @@ def test_question_model_ignores_legacy_optional_fields():
     assert question.required_points == ["generalization"]
     assert not hasattr(question, "optional_points")
     assert not hasattr(question, "common_missing_points")
+    assert question.point_hints[0].required_point == "generalization"
+    assert question.point_hints[0].gentle == "Think about test data."
+
+
+def test_question_model_rejects_point_hint_linked_to_different_required_point():
+    with pytest.raises(ValidationError):
+        Question.model_validate(
+            {
+                "question_id": "q_001_001",
+                "concept_id": "concept_001",
+                "question_type": "explanation",
+                "question": "Explain overfitting.",
+                "required_points": ["generalization"],
+                "point_hints": [
+                    {
+                        "point_id": "rp_001",
+                        "required_point": "training speed",
+                        "gentle": "Think about unseen data.",
+                        "direct": "Compare training and test performance.",
+                    }
+                ],
+            }
+        )
 
 
 def test_answer_evaluation_model_validates_allowed_statuses():

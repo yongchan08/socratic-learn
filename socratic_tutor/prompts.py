@@ -115,7 +115,14 @@ Return JSON in this exact shape:
       "question_type": "explanation",
       "question": "string",
       "required_points": ["string"],
-      "hints": ["string"],
+      "point_hints": [
+        {{
+          "point_id": "rp_001",
+          "required_point": "exact string copied from required_points",
+          "gentle": "indirect Socratic question",
+          "direct": "more direct Socratic question"
+        }}
+      ],
       "source_pages": [1]
     }}
   ]
@@ -136,11 +143,15 @@ Question generation rules:
 - In Korean, prefer a Socratic speaking style such as "~인가?", "~보게", "~설명해보게", "~말해보게", or "그대는".
 - Avoid plain textbook phrasing such as "...설명해보세요" unless the tone still clearly sounds like Socrates.
 - Preserve technical terms when appropriate, but explain them naturally in the output language.
-- User-facing question fields are question, required_points, and hints.
+- User-facing question fields are question, required_points, and point_hints.
 - Do not generate optional_points.
 - Do not generate common_missing_points.
 - required_points are the only grading criteria for this question.
-- Hints must help the student infer missing required_points without revealing the full answer immediately.
+- Create exactly one point_hints entry for every required_points entry.
+- point_hints.required_point must exactly copy its corresponding required_points string.
+- Assign stable point IDs in required_points order: rp_001, rp_002, and so on.
+- gentle must guide the first retry without stating the required point directly.
+- direct must guide the second retry more explicitly without giving a complete model answer.
 - Generate no more than one question of the same type unless necessary.
 - Return JSON only.
 """
@@ -173,7 +184,7 @@ Required points:
 {question.required_points}
 
 Available hints:
-{question.hints}
+{[hint.model_dump() for hint in question.point_hints] or question.hints}
 
 Student answer:
 {student_answer}
@@ -269,13 +280,13 @@ Feedback rules:
 - For attempt 1 or 2 insufficient or misconception answers, feedback_to_student should not list all missing_points.
 - Do not reveal the exact missing required point in feedback_to_student before the final attempt.
 - If reveal_missing_points is false, do not include missing_points verbatim or near-verbatim in feedback_to_student.
-- If some required_points are missing on attempt 1 or 2, create a socratic_follow_up using the hints.
+- If some required_points are missing on attempt 1 or 2, create a socratic_follow_up using the hint linked to the first missing point.
 - The Socratic follow-up should be a question, not an explanation.
 - The Socratic follow-up should not contain the full correct answer.
 - Put the reasoning path toward the missing idea in socratic_follow_up.
 - The feedback and the follow-up must not repeat the same sentence.
 - If next_action is ask_followup, feedback_to_student should be short and broad; socratic_follow_up should do the actual guidance.
-- socratic_follow_up should be based on missing_points and hints.
+- socratic_follow_up should be based on missing_points and their linked point_hints.
 - Use socratic_follow_up only when next_action is ask_followup.
 - Use improvement_note only when next_action is next_question.
 - improvement_note should explain what perspective would make the answer better.

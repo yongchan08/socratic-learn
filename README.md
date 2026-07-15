@@ -158,15 +158,53 @@ PDF 파싱 결과만 확인하고 싶으면 `parse`를 실행합니다.
 
 | 시도 | 답변이 부족한 경우 |
 | --- | --- |
-| 1차 | 소크라테스식 후속 질문을 보여주고 다시 답변을 받습니다. |
-| 2차 | 조금 더 직접적인 후속 질문 또는 힌트를 보여주고 다시 답변을 받습니다. |
+| 1차 | 첫 번째 누락 필수 요소에 연결된 간접적인 `gentle` 힌트를 보여줍니다. |
+| 2차 | 같은 누락 필수 요소에 연결된 더 구체적인 `direct` 힌트를 보여줍니다. |
 | 3차 | 빠진 핵심을 공개하고 다음 질문으로 넘어갑니다. |
+
+답변의 충족 여부와 점수는 `required_points`만으로 계산합니다. 1~2차에 답변이 부족하면 서버가 `missing_points`의 첫 번째 요소를 선택하고, 그 요소에 연결된 힌트를 사용합니다. 따라서 LLM이 임의로 다른 힌트를 선택하지 않습니다. 연결 힌트가 없는 기존 질문 데이터에만 LLM 후속 질문 또는 일반 폴백 질문을 사용합니다.
 
 ## MVP Concept Schema
 
 MVP에서 학습 루프가 사용하는 Concept 필드는 `concept_id`, `title`, `summary`, `importance`, `source_pages`, `evidence_from_material`입니다.
 
 `prerequisites`와 `common_misconceptions`는 향후 고도화 기능을 위한 optional metadata입니다. 기존 JSON 호환성을 위해 모델에는 남아 있지만, 현재 MVP에서는 질문 생성, 답변 평가, 진행 판단에 사용하지 않습니다.
+
+## Question Schema
+
+질문은 채점 기준인 `required_points`와 각 기준에 명시적으로 연결된 `point_hints`를 사용합니다.
+
+```json
+{
+  "question_id": "q_001_001",
+  "concept_id": "concept_001",
+  "question_type": "explanation",
+  "question": "훈련 성능과 테스트 성능의 차이를 어떻게 설명하겠는가?",
+  "required_points": [
+    "새로운 데이터에서 일반화 성능이 떨어진다",
+    "모델 복잡도가 지나치게 높을 수 있다"
+  ],
+  "point_hints": [
+    {
+      "point_id": "rp_001",
+      "required_point": "새로운 데이터에서 일반화 성능이 떨어진다",
+      "gentle": "처음 보는 데이터에서는 어떤 결과가 나타날지 생각해보게.",
+      "direct": "훈련 성능과 테스트 성능을 비교해보게."
+    },
+    {
+      "point_id": "rp_002",
+      "required_point": "모델 복잡도가 지나치게 높을 수 있다",
+      "gentle": "모델이 너무 많은 규칙을 기억하면 어떻게 될까?",
+      "direct": "모델 복잡도와 과적합의 관계를 생각해보게."
+    }
+  ],
+  "source_pages": [4, 5]
+}
+```
+
+`point_hints`는 `required_points`와 같은 순서로 정확히 한 개씩 존재해야 합니다. `point_id`는 질문 안에서 `rp_001`, `rp_002` 순서로 부여됩니다. `required_point` 문자열이 연결 대상과 다르거나 항목이 누락되면 새 질문 생성 결과를 저장하지 않습니다.
+
+기존 질문 JSON의 `hints` 배열도 계속 읽을 수 있습니다. `hints`와 `required_points`의 길이가 같으면 같은 순서의 연결 힌트로 변환하며, 이때 기존 힌트 하나를 `gentle`과 `direct`에 모두 사용합니다.
 
 ## Output Files
 
@@ -186,10 +224,12 @@ cache/
   {pdf_title}_{pdf_sha256_prefix}/
     parsed.json
     concepts_ko.json
-    questions_ko_v2.json
+    questions_ko_v3.json
 ```
 
 세션 JSON에는 사용자의 답변, 시도 횟수, 평가 결과, 요약이 함께 저장됩니다.
+
+`v3` 질문 캐시는 필수 요소별 단계 힌트를 포함합니다. 이전 `v2` 질문 캐시는 자동 재사용하지 않으며, 같은 PDF를 다시 학습할 때 새 스키마로 질문을 생성합니다.
 
 ## Language Behavior
 
@@ -232,7 +272,7 @@ PDF가 손상되었거나 텍스트 추출이 어려운 스캔 문서일 수 있
 
 ## Limitations
 
-- 웹 UI, 로그인, 결제, 데이터베이스는 없습니다.
+- 로그인, 결제, 데이터베이스는 없습니다.
 - OCR 고도화나 이미지 기반 슬라이드 이해는 지원하지 않습니다.
 - 스캔 PDF, 이미지 중심 슬라이드, 복잡한 수식/도표는 품질이 낮을 수 있습니다.
 - 긴 PDF는 `MAX_MARKDOWN_CHARS = 80_000` 기준으로 시작, 중간, 끝 부분만 사용합니다.

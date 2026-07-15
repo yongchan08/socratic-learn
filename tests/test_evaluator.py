@@ -1,5 +1,5 @@
 from socratic_tutor.evaluator import evaluate_answer, normalize_evaluation
-from socratic_tutor.models import AnswerEvaluation, Question
+from socratic_tutor.models import AnswerEvaluation, PointHint, Question
 
 
 class FakeLLMClient:
@@ -361,6 +361,61 @@ def test_attempt_2_insufficient_still_asks_followup():
     assert normalized.reveal_missing_points is False
 
 
+def test_first_attempt_uses_gentle_hint_linked_to_first_missing_point():
+    evaluation = AnswerEvaluation(
+        matched_points=["training fit"],
+        missing_points=["generalization", "model complexity"],
+        misconceptions=[],
+        score=0.3,
+        status="partially_sufficient",
+        feedback_to_student="핵심의 일부를 붙잡았네.",
+        socratic_follow_up="LLM이 만든 일반 질문",
+        next_action="ask_followup",
+    )
+    point_hints = [
+        PointHint(
+            point_id="rp_001",
+            required_point="generalization",
+            gentle="처음 보는 데이터에서는 어떨지 생각해보게.",
+            direct="훈련 성능과 테스트 성능을 비교해보게.",
+        ),
+        PointHint(
+            point_id="rp_002",
+            required_point="model complexity",
+            gentle="모델이 너무 많은 규칙을 기억하면 어떨까?",
+            direct="모델 복잡도와 과적합의 관계를 생각해보게.",
+        ),
+    ]
+
+    normalized = normalize_evaluation(evaluation, attempt_number=1, point_hints=point_hints)
+
+    assert normalized.socratic_follow_up == "처음 보는 데이터에서는 어떨지 생각해보게."
+
+
+def test_second_attempt_uses_direct_hint_linked_to_missing_point():
+    evaluation = AnswerEvaluation(
+        matched_points=[],
+        missing_points=["generalization"],
+        misconceptions=[],
+        score=0,
+        status="insufficient",
+        feedback_to_student="아직 핵심 설명이 충분하지 않다네.",
+        next_action="ask_followup",
+    )
+    point_hints = [
+        PointHint(
+            point_id="rp_001",
+            required_point="generalization",
+            gentle="처음 보는 데이터에서는 어떨지 생각해보게.",
+            direct="훈련 성능과 테스트 성능을 비교해보게.",
+        )
+    ]
+
+    normalized = normalize_evaluation(evaluation, attempt_number=2, point_hints=point_hints)
+
+    assert normalized.socratic_follow_up == "훈련 성능과 테스트 성능을 비교해보게."
+
+
 def test_attempt_3_insufficient_reveals_and_moves_next():
     evaluation = AnswerEvaluation(
         matched_points=[],
@@ -411,3 +466,40 @@ def test_evaluate_answer_uses_fake_llm_client():
     evaluation = evaluate_answer(fake, question, "It hurts generalization.", 1)
 
     assert evaluation.status == "sufficient"
+
+
+def test_evaluate_answer_prefers_question_linked_hint_over_llm_followup():
+    question = Question.model_validate(
+        {
+            "question_id": "q_001_001",
+            "concept_id": "concept_001",
+            "question_type": "explanation",
+            "question": "Explain overfitting.",
+            "required_points": ["generalization"],
+            "point_hints": [
+                {
+                    "point_id": "rp_001",
+                    "required_point": "generalization",
+                    "gentle": "처음 보는 데이터에서는 어떤 일이 생길까?",
+                    "direct": "훈련 성능과 테스트 성능을 비교해보게.",
+                }
+            ],
+        }
+    )
+    fake = FakeLLMClient(
+        {
+            "matched_points": [],
+            "missing_points": ["generalization"],
+            "misconceptions": [],
+            "score": 0,
+            "status": "insufficient",
+            "feedback_to_student": "아직 핵심 설명이 충분하지 않다네.",
+            "hint": None,
+            "socratic_follow_up": "LLM이 임의로 만든 질문",
+            "next_action": "ask_followup",
+        }
+    )
+
+    evaluation = evaluate_answer(fake, question, "training data", 1)
+
+    assert evaluation.socratic_follow_up == "처음 보는 데이터에서는 어떤 일이 생길까?"
