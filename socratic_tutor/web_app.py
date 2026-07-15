@@ -111,6 +111,8 @@ def create_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=format_pipeline_error(exc)) from exc
+    finally:
+        target.unlink(missing_ok=True)
     return manager.snapshot(session.session_id)
 
 
@@ -185,6 +187,7 @@ def create_session_stream(
         except Exception as exc:
             event_queue.put(_sse({"step": "error", "message": format_pipeline_error(exc)}))
         finally:
+            target.unlink(missing_ok=True)
             event_queue.put(None)  # 종료 신호
 
     thread = threading.Thread(target=_worker, daemon=True)
