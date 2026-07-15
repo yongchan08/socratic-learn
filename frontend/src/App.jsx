@@ -262,6 +262,10 @@ export function App() {
   const questionChangeSoundRef = useRef(null);
   const previousQuestionIdRef = useRef(null);
 
+  useEffect(() => {
+    fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
+  }, []);
+
   const concepts = state?.session?.concepts ?? [];
   const answers = state?.session?.answers ?? [];
   const currentQuestion = state?.current_question;
