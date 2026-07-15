@@ -25,6 +25,7 @@ FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 UPLOAD_DIR = PROJECT_ROOT / "uploads"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+SSE_HEARTBEAT_SECONDS = 15
 
 manager = WebStudyManager()
 app = FastAPI(title="Socratic Lecture Tutor Web")
@@ -64,6 +65,18 @@ def save_validated_pdf_upload(pdf: UploadFile, target: Path) -> None:
     except Exception:
         target.unlink(missing_ok=True)
         raise
+
+
+def stream_queue_events(event_queue: queue.Queue, heartbeat_seconds: float = SSE_HEARTBEAT_SECONDS):
+    while True:
+        try:
+            item = event_queue.get(timeout=heartbeat_seconds)
+        except queue.Empty:
+            yield ": heartbeat\n\n"
+            continue
+        if item is None:
+            break
+        yield item
 
 
 @app.post("/api/sessions")
@@ -177,15 +190,8 @@ def create_session_stream(
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
 
-    def _event_generator():
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            yield item
-
     return StreamingResponse(
-        _event_generator(),
+        stream_queue_events(event_queue),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
