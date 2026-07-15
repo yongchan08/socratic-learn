@@ -5,38 +5,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
 const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
 const MAX_ATTEMPTS_PER_QUESTION = 3;
-
-const SOCRATES_MOTIONS = {
-  talking: {
-    loop: true, repeat: 3,
-    frames: [
-      "/motion-assets/talking/frame-01.png",
-      "/motion-assets/talking/frame-02.png",
-      "/motion-assets/talking/frame-03.png",
-      "/motion-assets/talking/frame-02.png",
-    ],
-  },
-  correct: {
-    loop: true, repeat: 3,
-    frames: [
-      "/motion-assets/correct/frame-00.png",
-      "/motion-assets/correct/frame-01.png",
-      "/motion-assets/correct/frame-02.png",
-      "/motion-assets/correct/frame-03.png",
-      "/motion-assets/correct/frame-04.png",
-      "/motion-assets/correct/frame-05.png",
-      "/motion-assets/correct/frame-06.png",
-    ],
-  },
-  failure: {
-    loop: true, repeat: 3,
-    frames: [
-      "/motion-assets/failure/frame-01.png",
-      "/motion-assets/failure/frame-02.png",
-      "/motion-assets/failure/frame-03.png",
-    ],
-  },
-};
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 const initialForm = {
   subject: "",
@@ -46,79 +15,6 @@ const initialForm = {
   questionsPerConcept: 3,
   model: "",
 };
-
-const forcedStudyState = {
-  session: {
-    session_id: "local-preview",
-    concepts: [
-      {
-        concept_id: "concept-1",
-        title: "소크라테스식 질문",
-        summary: "답을 직접 제시하기보다 질문을 통해 사고를 정교하게 만드는 학습 방식입니다.",
-        importance: "개념을 자신의 언어로 설명하게 만들어 이해의 빈틈을 드러냅니다.",
-        source_pages: [1],
-        evidence_from_material: "질문과 답변을 반복하며 핵심 개념을 점검합니다.",
-      },
-      {
-        concept_id: "concept-2",
-        title: "핵심 개념 추출",
-        summary: "강의 자료에서 학습자가 반드시 이해해야 할 중심 내용을 고르는 과정입니다.",
-        importance: "복잡한 강의 내용을 작은 관문으로 나누어 학습 부담을 줄입니다.",
-        source_pages: [2],
-        evidence_from_material: "PDF 분석 결과를 바탕으로 주요 개념을 구성합니다.",
-      },
-      {
-        concept_id: "concept-3",
-        title: "답변 평가",
-        summary: "학습자의 답변이 필수 요소를 포함하는지 확인하고 피드백합니다.",
-        importance: "틀린 지점을 바로 드러내기보다 다시 생각할 단서를 제공합니다.",
-        source_pages: [3],
-        evidence_from_material: "답변의 충분성, 누락, 오개념을 평가합니다.",
-      },
-    ],
-    questions: [
-      {
-        question_id: "question-1",
-        concept_id: "concept-1",
-        question: "그대가 이해한 소크라테스식 질문이란 무엇인가? 단순한 설명과 어떤 점에서 다른지 말해보게.",
-        expected_elements: ["질문 중심", "자기 설명", "이해 점검"],
-        source_pages: [1],
-      },
-      {
-        question_id: "question-2",
-        concept_id: "concept-2",
-        question: "강의 PDF에서 핵심 개념을 먼저 찾는 일이 왜 학습 여정을 짧고 선명하게 만드는가?",
-        expected_elements: ["핵심 개념", "학습 부담", "우선순위"],
-        source_pages: [2],
-      },
-      {
-        question_id: "question-3",
-        concept_id: "concept-3",
-        question: "답변 평가가 정답 확인에 그치지 않고 다음 질문을 만드는 이유는 무엇인가?",
-        expected_elements: ["피드백", "후속 질문", "개념 보완"],
-        source_pages: [3],
-      },
-    ],
-    answers: [],
-    summary: null,
-  },
-  current_question: {
-    question_id: "question-1",
-    concept_id: "concept-1",
-    question: "그대가 이해한 소크라테스식 질문이란 무엇인가? 단순한 설명과 어떤 점에서 다른지 말해보게.",
-    expected_elements: ["질문 중심", "자기 설명", "이해 점검"],
-    source_pages: [1],
-  },
-  current_index: 0,
-  total_questions: 3,
-  completed: false,
-  last_answer: null,
-};
-
-function getInitialState() {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("forceStudy") === "1" ? forcedStudyState : null;
-}
 
 /* ── SVG defs (ornaments) ────────────────────────────────────────────────── */
 
@@ -185,32 +81,6 @@ function SvgDefs() {
             <rect x="3.6" y="26" width="24.8" height="2.7" rx="0.4"/>
           </g>
         </symbol>
-        <symbol id="sltIconRecord" viewBox="0 0 32 32">
-          <g fill="#130c05" stroke="#130c05" strokeWidth="1.6" strokeLinejoin="round" opacity="0.96">
-            <path d="M8.1 4.8h13.8c1.3 0 2.3 1 2.3 2.3v19.4H10.4c-1.5 0-2.7-1.2-2.7-2.7V5.2c0-0.2 0.2-0.4 0.4-0.4Z"/>
-            <path d="M10.3 4.8v19.1c0 1.4 1.1 2.6 2.6 2.6" fill="none"/>
-            <path d="M20.2 5.6v14.5l2-1.3 2 1.3V6.5"/>
-          </g>
-          <g fill="url(#sltGoldV)" stroke="#4a3014" strokeWidth="0.65" strokeLinejoin="round" filter="url(#sltGlow)">
-            <path d="M8.1 4.8h13.8c1.3 0 2.3 1 2.3 2.3v19.4H10.4c-1.5 0-2.7-1.2-2.7-2.7V5.2c0-0.2 0.2-0.4 0.4-0.4Z"/>
-            <path d="M10.3 4.8v19.1c0 1.4 1.1 2.6 2.6 2.6" fill="none" stroke="#3d280f" strokeWidth="1"/>
-            <path d="M20.2 5.6v14.5l2-1.3 2 1.3V6.5"/>
-            <path d="M12.6 10h5.5M12.6 13.7h5.5M12.6 17.4h4.6M11.5 23.4h10.6" fill="none" stroke="#d0b276" strokeWidth="0.8" strokeLinecap="round" opacity="0.56"/>
-          </g>
-        </symbol>
-        <symbol id="sltIconHelp" viewBox="0 0 32 32">
-          <g fill="#130c05" stroke="#130c05" strokeWidth="1.6" strokeLinejoin="round" opacity="0.96">
-            <circle cx="16" cy="16" r="12" fill="none" strokeWidth="2.4"/>
-            <path d="M12.2 12.6c0-2.3 1.8-3.9 4-3.9 2.3 0 4 1.4 4 3.5 0 1.7-1 2.5-2.3 3.3-1.2.8-1.7 1.6-1.7 3" fill="none" strokeWidth="2.2" strokeLinecap="round"/>
-            <circle cx="16.2" cy="22.4" r="1.45"/>
-          </g>
-          <g fill="none" stroke="url(#sltGoldV)" strokeWidth="0.7" strokeLinejoin="round" filter="url(#sltGlow)">
-            <circle cx="16" cy="16" r="12" strokeWidth="1.1"/>
-            <path d="M12.2 12.6c0-2.3 1.8-3.9 4-3.9 2.3 0 4 1.4 4 3.5 0 1.7-1 2.5-2.3 3.3-1.2.8-1.7 1.6-1.7 3" strokeWidth="1.05" strokeLinecap="round"/>
-          </g>
-          <circle cx="16.2" cy="22.4" r="1.45" fill="url(#sltGoldV)" stroke="#4a3014" strokeWidth="0.4" filter="url(#sltGlow)"/>
-        </symbol>
-
         {/* LeftColumn */}
         <linearGradient id="slpGoldStroke" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#37230e"/><stop offset="0.22" stopColor="#7f612e"/>
@@ -351,7 +221,7 @@ function SsbBC({ cls }) {
 
 /* ── TopBar ──────────────────────────────────────────────────────────────── */
 
-function TopBar({ onAcademy, onRecord, audioSettings }) {
+function TopBar({ onAcademy, audioSettings }) {
   return (
     <header className="slt-topbar" role="banner">
       <span className="slt-edge slt-edge--top" aria-hidden="true"/>
@@ -368,40 +238,10 @@ function TopBar({ onAcademy, onRecord, audioSettings }) {
             <span>학당</span>
           </button>
         )}
-        {onRecord && (
-          <button type="button" className="slt-nav-button" onClick={onRecord}>
-            <svg className="slt-nav-icon" aria-hidden="true"><use href="#sltIconRecord"/></svg>
-            <span>기록서</span>
-          </button>
-        )}
-        <button type="button" className="slt-nav-button">
-          <svg className="slt-nav-icon" aria-hidden="true"><use href="#sltIconHelp"/></svg>
-          <span>도움말</span>
-        </button>
         {audioSettings}
       </nav>
     </header>
   );
-}
-
-/* ── Animated Socrates ───────────────────────────────────────────────────── */
-
-function AnimatedSocrates({ motion, motionKey }) {
-  const [frameIndex, setFrameIndex] = useState(0);
-  useEffect(() => {
-    setFrameIndex(0);
-    if (motion.frames.length <= 1) return undefined;
-    const finalFrameIndex = motion.frames.length - 1;
-    const finalLoopFrameIndex = motion.repeat ? motion.frames.length * motion.repeat - 1 : finalFrameIndex;
-    const interval = window.setInterval(() => {
-      setFrameIndex((current) => {
-        if (!motion.loop) return Math.min(current + 1, finalFrameIndex);
-        return Math.min(current + 1, finalLoopFrameIndex);
-      });
-    }, 180);
-    return () => window.clearInterval(interval);
-  }, [motion, motionKey]);
-  return <img src={motion.frames[frameIndex % motion.frames.length]} alt="AI 소크라테스"/>;
 }
 
 /* ── Main App ────────────────────────────────────────────────────────────── */
@@ -409,11 +249,11 @@ function AnimatedSocrates({ motion, motionKey }) {
 export function App() {
   const [file, setFile] = useState(null);
   const [form, setForm] = useState(initialForm);
-  const [state, setState] = useState(getInitialState);
+  const [state, setState] = useState(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [loadingSteps, setLoadingSteps] = useState([]);  // {label, done, startedAt, endedAt}
+  const [loadingSteps, setLoadingSteps] = useState([]);
   const [dismissedTransitionAnswerId, setDismissedTransitionAnswerId] = useState(null);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.32);
@@ -506,14 +346,14 @@ export function App() {
     if (form.model) payload.append("model", form.model);
 
     const addStep = (label) => {
-      setLoadingSteps((prev) => [...prev, { label, done: false, startedAt: Date.now(), endedAt: null }]);
+      setLoadingSteps((prev) => [...prev, { label, done: false }]);
     };
     const completeStep = (label) => {
       setLoadingSteps((prev) =>
-        prev.map((s) => s.label === label && !s.done ? { ...s, done: true, endedAt: Date.now() } : s)
+        prev.map((s) => s.label === label && !s.done ? { ...s, done: true } : s)
       );
     };
-    const updateStep = (label, newLabel) => {
+    const updateStep = (newLabel) => {
       setLoadingSteps((prev) =>
         prev.map((s, i) => i === prev.length - 1 ? { ...s, label: newLabel } : s)
       );
@@ -523,14 +363,6 @@ export function App() {
       const response = await fetch(`${API_BASE}/api/sessions/stream`, { method: "POST", body: payload });
 
       // 서버가 아직 /stream 엔드포인트를 모를 때 (배포 전) → 기존 방식으로 폴백
-      if (response.status === 405) {
-        addStep("📜 분석 중... (구버전 서버)");
-        const next = await request("/api/sessions", { method: "POST", body: payload });
-        setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true, endedAt: Date.now() })));
-        setDismissedTransitionAnswerId(null); setState(next); setAnswer("");
-        return;
-      }
-
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.detail || "요청을 처리하지 못했습니다.");
@@ -561,9 +393,9 @@ export function App() {
             completeStep("🔍 핵심 개념 발굴 중...");
             addStep(evt.message);
           } else if (evt.step === "questions") {
-            updateStep(null, evt.message);
+            updateStep(evt.message);
           } else if (evt.step === "done") {
-            setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true, endedAt: s.endedAt ?? Date.now() })));
+            setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
             setDismissedTransitionAnswerId(null);
             setState(evt.payload);
             setAnswer("");
@@ -577,6 +409,18 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function selectPdf(event) {
+    const selected = event.target.files?.[0] ?? null;
+    if (selected && selected.size > MAX_PDF_BYTES) {
+      setFile(null);
+      setError("PDF 파일은 최대 25MB까지 업로드할 수 있습니다.");
+      event.target.value = "";
+      return;
+    }
+    setFile(selected);
+    setError("");
   }
 
   async function submitAnswer(event) {
@@ -642,7 +486,7 @@ export function App() {
                   {error && <div className="parch-error">{error}</div>}
                   <form onSubmit={startSession} className="parch-form">
                     <label className="parch-dropzone">
-                      <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}/>
+                      <input type="file" accept="application/pdf,.pdf" onChange={selectPdf}/>
                       <FileUp size={24} style={{ opacity: 0.7 }}/>
                       <span>{file ? file.name : "강의 PDF 선택"}</span>
                     </label>
@@ -788,7 +632,6 @@ export function App() {
         <div className="app-frame">
           <TopBar
             onAcademy={() => { setState(null); setAnswer(""); }}
-            onRecord={() => {}}
             audioSettings={audioSettings}
           />
 
@@ -936,7 +779,6 @@ export function App() {
                         <div className="srp-shortcuts">
                           <button type="button" className="srp-shortcut" disabled={busy} onClick={() => postAction("skip")}><strong>/skip</strong><span>건너뛰기</span></button>
                           <button type="button" className="srp-shortcut" disabled={busy} onClick={() => postAction("finish")}><strong>/quit</strong><span>종료</span></button>
-                          <button type="button" className="srp-shortcut"><strong>/help</strong><span>도움말</span></button>
                         </div>
                         <button className="srp-submit-button" type="submit" disabled={busy || !answer.trim()}>
                           <svg className="srp-submit-frame" viewBox="0 0 360 58" preserveAspectRatio="none" aria-hidden="true"><use href="#srpSubmitFrame"/></svg>
@@ -1047,12 +889,6 @@ function AudioSettings({
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
-
-function getSocratesMotion(status) {
-  if (status === "sufficient") return SOCRATES_MOTIONS.correct;
-  if (status === "insufficient" || status === "misconception") return SOCRATES_MOTIONS.failure;
-  return SOCRATES_MOTIONS.talking;
-}
 
 function getAdviceText(evaluation) {
   if (!evaluation || evaluation.status === "sufficient") return null;

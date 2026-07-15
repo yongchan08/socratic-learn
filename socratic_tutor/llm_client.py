@@ -4,10 +4,32 @@ import json
 import os
 from typing import Any
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError, Timeout
+
+
+LLM_CONNECT_TIMEOUT_SECONDS = 10.0
+LLM_RESPONSE_TIMEOUT_SECONDS = 60.0
+LLM_NETWORK_RETRIES = 2
+LLM_JSON_REPAIR_RETRIES = 1
 
 
 class LLMJSONParseError(RuntimeError):
+    pass
+
+
+class LLMConnectionError(RuntimeError):
+    pass
+
+
+class LLMRequestTimeoutError(RuntimeError):
+    pass
+
+
+class LLMRateLimitError(RuntimeError):
+    pass
+
+
+class LLMServiceError(RuntimeError):
     pass
 
 
@@ -18,32 +40,46 @@ class LLMClient:
         self.model = model
         self.temperature = temperature
         base_url = os.getenv("OPENAI_BASE_URL")
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=Timeout(LLM_RESPONSE_TIMEOUT_SECONDS, connect=LLM_CONNECT_TIMEOUT_SECONDS),
+            max_retries=LLM_NETWORK_RETRIES,
+        )
 
     def complete_json(
         self,
         system_prompt: str,
         user_prompt: str,
-        max_retries: int = 2,
+        json_repair_retries: int = LLM_JSON_REPAIR_RETRIES,
     ) -> dict[str, Any]:
         last_content = ""
         current_user_prompt = user_prompt
 
-        for attempt in range(max_retries + 1):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                temperature=self.temperature,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": f"{system_prompt}\nReturn valid JSON only."},
-                    {"role": "user", "content": current_user_prompt},
-                ],
-            )
+        for attempt in range(json_repair_retries + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    temperature=self.temperature,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": f"{system_prompt}\nReturn valid JSON only."},
+                        {"role": "user", "content": current_user_prompt},
+                    ],
+                )
+            except APITimeoutError as exc:
+                raise LLMRequestTimeoutError("LLM 응답 시간이 초과되었습니다.") from exc
+            except RateLimitError as exc:
+                raise LLMRateLimitError("LLM API 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.") from exc
+            except APIConnectionError as exc:
+                raise LLMConnectionError("LLM API에 연결할 수 없습니다.") from exc
+            except APIStatusError as exc:
+                raise LLMServiceError(f"LLM API 요청에 실패했습니다. 상태 코드: {exc.status_code}") from exc
             last_content = response.choices[0].message.content or ""
             try:
                 parsed = json.loads(last_content)
             except json.JSONDecodeError:
-                if attempt >= max_retries:
+                if attempt >= json_repair_retries:
                     break
                 current_user_prompt = (
                     "The previous response was not valid JSON. Repair it and return valid JSON only.\n\n"

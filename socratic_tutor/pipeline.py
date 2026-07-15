@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from pathlib import Path
 
 import typer
@@ -15,6 +15,17 @@ from .renderer import console, print_concepts, print_header, print_session_summa
 from .session import generate_session_summary, run_interactive_session
 from .storage import cache_path, compute_file_hash, ensure_dir, legacy_cache_path, load_json, save_json, save_text
 from .utils import truncate_markdown, utc_now
+
+
+QUESTION_GENERATION_TIMEOUT_SECONDS = 180.0
+
+
+class QuestionGenerationTimeoutError(RuntimeError):
+    pass
+
+
+class QuestionGenerationError(RuntimeError):
+    pass
 
 
 def run_parse_pipeline(config: AppConfig) -> ParsedDocument:
@@ -160,7 +171,12 @@ def generate_or_load_questions(
             questions_per_concept=config.questions_per_concept,
             output_language=config.output_language,
         )
-        payload = llm_client.complete_json(system_prompt, user_prompt)
+        try:
+            payload = llm_client.complete_json(system_prompt, user_prompt)
+        except Exception as exc:
+            raise QuestionGenerationError(
+                f"'{concept.title}' ({concept.concept_id}) 개념의 질문 생성에 실패했습니다: {exc}"
+            ) from exc
         raw_questions = payload.get("questions", [])
         qs: list[Question] = []
         for question_index, item in enumerate(raw_questions[: config.questions_per_concept], start=1):
@@ -174,16 +190,16 @@ def generate_or_load_questions(
         return concept_index, qs
 
     # 최대 7개 스레드로 병렬 처리 (OpenAI API는 스레드 안전)
-    results: dict[int, list[Question]] = {}
-    completed = 0
-    with ThreadPoolExecutor(max_workers=min(total, 7)) as pool:
+    pool = ThreadPoolExecutor(max_workers=min(total, 7))
+    timed_out = False
+    try:
         futures = {pool.submit(_generate_for_concept, (i, c)): i for i, c in enumerate(concepts, start=1)}
-        for future in as_completed(futures):
-            concept_index, qs = future.result()
-            results[concept_index] = qs
-            completed += 1
-            if on_progress:
-                on_progress(completed, total)
+        results = _collect_question_results(futures, total, on_progress)
+    except QuestionGenerationTimeoutError:
+        timed_out = True
+        raise
+    finally:
+        pool.shutdown(wait=not timed_out, cancel_futures=timed_out)
 
     # 원래 순서대로 정렬
     questions: list[Question] = []
@@ -193,6 +209,30 @@ def generate_or_load_questions(
     save_json(questions, cached)
     save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
     return questions
+
+
+def _collect_question_results(
+    futures: dict[Future, int],
+    total: int,
+    on_progress: object | None,
+    timeout_seconds: float = QUESTION_GENERATION_TIMEOUT_SECONDS,
+) -> dict[int, list[Question]]:
+    results: dict[int, list[Question]] = {}
+    completed = 0
+    try:
+        for future in as_completed(futures, timeout=timeout_seconds):
+            concept_index, questions = future.result()
+            results[concept_index] = questions
+            completed += 1
+            if on_progress:
+                on_progress(completed, total)
+    except FuturesTimeoutError as exc:
+        for future in futures:
+            future.cancel()
+        raise QuestionGenerationTimeoutError(
+            f"질문 생성이 제한 시간 {int(timeout_seconds)}초를 초과했습니다."
+        ) from exc
+    return results
 
 
 def document_output_dir(config: AppConfig, parsed_doc: ParsedDocument) -> Path:

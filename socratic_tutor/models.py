@@ -94,7 +94,6 @@ class AnswerEvaluation(BaseModel):
     next_action: Literal[
         "next_question",
         "ask_followup",
-        "show_summary",
     ]
 
 

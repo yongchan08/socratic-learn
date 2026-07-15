@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime, timezone
 
@@ -14,11 +13,6 @@ def utc_now() -> datetime:
 
 def short_uuid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
-
-
-def slugify(value: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
-    return slug or "document"
 
 
 def truncate_markdown(markdown: str, max_chars: int = MAX_MARKDOWN_CHARS) -> tuple[str, bool]:
