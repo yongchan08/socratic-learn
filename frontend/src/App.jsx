@@ -5,6 +5,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
 const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
 const MAX_ATTEMPTS_PER_QUESTION = 3;
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 const SOCRATES_MOTIONS = {
   talking: {
@@ -579,6 +580,18 @@ export function App() {
     }
   }
 
+  function selectPdf(event) {
+    const selected = event.target.files?.[0] ?? null;
+    if (selected && selected.size > MAX_PDF_BYTES) {
+      setFile(null);
+      setError("PDF 파일은 최대 25MB까지 업로드할 수 있습니다.");
+      event.target.value = "";
+      return;
+    }
+    setFile(selected);
+    setError("");
+  }
+
   async function submitAnswer(event) {
     event.preventDefault();
     if (!state || !answer.trim()) return;
@@ -642,7 +655,7 @@ export function App() {
                   {error && <div className="parch-error">{error}</div>}
                   <form onSubmit={startSession} className="parch-form">
                     <label className="parch-dropzone">
-                      <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}/>
+                      <input type="file" accept="application/pdf,.pdf" onChange={selectPdf}/>
                       <FileUp size={24} style={{ opacity: 0.7 }}/>
                       <span>{file ? file.name : "강의 PDF 선택"}</span>
                     </label>

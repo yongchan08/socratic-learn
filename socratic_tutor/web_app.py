@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import queue
-import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -16,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .pipeline import format_pipeline_error
+from .pdf_parser import PDF_SIGNATURE
 from .storage import ensure_dir
 from .web_service import WebStudyError, WebStudyManager
 
@@ -23,6 +23,8 @@ from .web_service import WebStudyError, WebStudyManager
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 UPLOAD_DIR = PROJECT_ROOT / "uploads"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 manager = WebStudyManager()
 app = FastAPI(title="Socratic Lecture Tutor Web")
@@ -45,6 +47,25 @@ class AnswerRequest(BaseModel):
     answer: str = Field(min_length=1)
 
 
+def save_validated_pdf_upload(pdf: UploadFile, target: Path) -> None:
+    total_bytes = 0
+    signature = b""
+    try:
+        with target.open("wb") as file:
+            while chunk := pdf.file.read(UPLOAD_CHUNK_BYTES):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="PDF 파일은 최대 25MB까지 업로드할 수 있습니다.")
+                if len(signature) < len(PDF_SIGNATURE):
+                    signature += chunk[: len(PDF_SIGNATURE) - len(signature)]
+                file.write(chunk)
+        if signature != PDF_SIGNATURE:
+            raise HTTPException(status_code=400, detail="유효한 PDF 파일이 아닙니다.")
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
+
 @app.post("/api/sessions")
 def create_session(
     pdf: UploadFile = File(),
@@ -60,8 +81,7 @@ def create_session(
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
     ensure_dir(UPLOAD_DIR)
     target = UPLOAD_DIR / f"{Path(pdf.filename).stem}_{uuid.uuid4().hex[:8]}{Path(pdf.filename).suffix}"
-    with target.open("wb") as file:
-        shutil.copyfileobj(pdf.file, file)
+    save_validated_pdf_upload(pdf, target)
 
     try:
         session = manager.create_session(
@@ -106,8 +126,7 @@ def create_session_stream(
 
     ensure_dir(UPLOAD_DIR)
     target = UPLOAD_DIR / f"{Path(pdf.filename).stem}_{uuid.uuid4().hex[:8]}{Path(pdf.filename).suffix}"
-    with target.open("wb") as file:
-        shutil.copyfileobj(pdf.file, file)
+    save_validated_pdf_upload(pdf, target)
 
     # 이벤트 큐: 백그라운드 스레드 → SSE 제너레이터
     event_queue: queue.Queue = queue.Queue()
