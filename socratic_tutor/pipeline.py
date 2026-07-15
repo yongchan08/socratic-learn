@@ -138,10 +138,10 @@ def generate_or_load_questions(
     cached = cache_path(
         config.cache_dir,
         file_hash,
-        f"questions_{config.output_language}_v2.json",
+        f"questions_{config.output_language}_v3.json",
         title=parsed_doc.title,
     )
-    legacy_cached = legacy_cache_path(config.cache_dir, file_hash, f"questions_{config.output_language}_v2.json")
+    legacy_cached = legacy_cache_path(config.cache_dir, file_hash, f"questions_{config.output_language}_v3.json")
     if cached.exists() and not config.skip_cache:
         return [Question.model_validate(item) for item in load_json(cached)]
     if legacy_cached.exists() and not config.skip_cache:
@@ -167,7 +167,10 @@ def generate_or_load_questions(
             item = dict(item)
             item["concept_id"] = concept.concept_id
             item["question_id"] = f"q_{concept_index:03d}_{question_index:03d}"
-            qs.append(Question.model_validate(item))
+            question = Question.model_validate(item)
+            if len(question.point_hints) != len(question.required_points):
+                raise ValueError("Generated question must link a gentle and direct hint to every required point.")
+            qs.append(question)
         return concept_index, qs
 
     # 최대 7개 스레드로 병렬 처리 (OpenAI API는 스레드 안전)

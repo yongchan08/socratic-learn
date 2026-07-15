@@ -104,6 +104,8 @@ def test_question_generation_prompt_does_not_generate_optional_or_common_missing
     assert '"common_missing_points"' not in user_prompt
     assert "Do not generate optional_points" in user_prompt
     assert "Do not generate common_missing_points" in user_prompt
+    assert '"point_hints"' in user_prompt
+    assert "Create exactly one point_hints entry for every required_points entry" in user_prompt
 
 
 def test_question_generation_prompt_omits_future_concept_metadata():

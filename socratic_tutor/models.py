@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ParsedPage(BaseModel):
@@ -31,6 +31,13 @@ class Concept(BaseModel):
     evidence_from_material: list[str] = Field(default_factory=list)
 
 
+class PointHint(BaseModel):
+    point_id: str
+    required_point: str
+    gentle: str
+    direct: str
+
+
 class Question(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -39,8 +46,33 @@ class Question(BaseModel):
     question_type: Literal["explanation", "comparison", "application"]
     question: str
     required_points: list[str]
+    point_hints: list[PointHint] = Field(default_factory=list)
     hints: list[str] = Field(default_factory=list)
     source_pages: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_point_hints(self) -> "Question":
+        if not self.point_hints and len(self.hints) == len(self.required_points):
+            self.point_hints = [
+                PointHint(
+                    point_id=f"rp_{index:03d}",
+                    required_point=point,
+                    gentle=hint,
+                    direct=hint,
+                )
+                for index, (point, hint) in enumerate(zip(self.required_points, self.hints), start=1)
+            ]
+        if not self.point_hints:
+            return self
+
+        linked_points = [hint.required_point for hint in self.point_hints]
+        linked_ids = [hint.point_id for hint in self.point_hints]
+        if linked_points != self.required_points:
+            raise ValueError("point_hints must cover required_points once and in the same order")
+        expected_ids = [f"rp_{index:03d}" for index in range(1, len(self.required_points) + 1)]
+        if linked_ids != expected_ids:
+            raise ValueError("point_hints point_id values must follow rp_001, rp_002, ... order")
+        return self
 
 
 class AnswerEvaluation(BaseModel):
