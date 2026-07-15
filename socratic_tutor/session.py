@@ -17,7 +17,7 @@ from .models import (
     StudySession,
 )
 from .prompts import build_session_summary_prompt
-from .renderer import console, print_evaluation, print_question, print_session_summary
+from .renderer import console, print_evaluation, print_question
 from .utils import utc_now
 
 
@@ -188,9 +188,3 @@ def _fallback_summary(session: StudySession) -> SessionSummary:
         recommended_review_questions=review_questions,
         overall_feedback="현재 답변 기록을 기준으로 생성한 로컬 요약입니다.",
     )
-
-
-def show_summary(session: StudySession, llm_client: object | None = None) -> SessionSummary:
-    summary = generate_session_summary(session, llm_client)
-    print_session_summary(summary)
-    return summary

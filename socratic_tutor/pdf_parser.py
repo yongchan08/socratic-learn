@@ -56,10 +56,8 @@ def split_markdown_into_pages(markdown: str) -> list[ParsedPage]:
 
 
 def _to_markdown(path: str) -> str:
-    """pymupdf를 직접 사용해 순수 텍스트를 추출합니다.
-    pymupdf4llm 대비 5~10배 빠르며, LLM 처리에는 텍스트만 필요하므로 품질 손실 없음.
-    """
-    import pymupdf  # pymupdf4llm의 의존성으로 이미 설치되어 있음
+    """PyMuPDF를 직접 사용해 페이지별 텍스트를 추출합니다."""
+    import pymupdf
 
     try:
         doc = pymupdf.open(path)
