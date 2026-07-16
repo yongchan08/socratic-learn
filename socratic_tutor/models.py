@@ -26,8 +26,6 @@ class Concept(BaseModel):
     summary: str
     importance: str
     source_pages: list[int]
-    prerequisites: list[str] = Field(default_factory=list)
-    common_misconceptions: list[str] = Field(default_factory=list)
     evidence_from_material: list[str] = Field(default_factory=list)
 
 
