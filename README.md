@@ -170,8 +170,6 @@ PDF 파싱 결과만 확인하고 싶으면 `parse`를 실행합니다.
 
 MVP에서 학습 루프가 사용하는 Concept 필드는 `concept_id`, `title`, `summary`, `importance`, `source_pages`, `evidence_from_material`입니다.
 
-`prerequisites`와 `common_misconceptions`는 향후 고도화 기능을 위한 optional metadata입니다. 기존 JSON 호환성을 위해 모델에는 남아 있지만, 현재 MVP에서는 질문 생성, 답변 평가, 진행 판단에 사용하지 않습니다.
-
 ## Question Schema
 
 질문은 채점 기준인 `required_points`와 각 기준에 명시적으로 연결된 `point_hints`를 사용합니다.

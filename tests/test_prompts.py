@@ -26,7 +26,7 @@ def test_question_generation_prompt_avoids_compound_questions():
     assert "Avoid compound questions" in user_prompt
 
 
-def test_concept_extraction_prompt_does_not_require_future_metadata():
+def test_concept_extraction_prompt_uses_current_schema():
     _, user_prompt = build_concept_extraction_prompt(
         markdown="Training error and test error can diverge.",
         subject="Machine Learning",
@@ -35,10 +35,8 @@ def test_concept_extraction_prompt_does_not_require_future_metadata():
     )
 
     json_shape = user_prompt.split("Rules:", maxsplit=1)[0]
-    assert '"prerequisites"' not in json_shape
-    assert '"common_misconceptions"' not in json_shape
-    assert "Do not generate prerequisites" in user_prompt
-    assert "Do not generate common_misconceptions" in user_prompt
+    assert '"importance"' in json_shape
+    assert '"evidence_from_material"' in json_shape
 
 
 def test_question_generation_prompt_uses_korean_output_language():
@@ -108,7 +106,7 @@ def test_question_generation_prompt_does_not_generate_optional_or_common_missing
     assert "Create exactly one point_hints entry for every required_points entry" in user_prompt
 
 
-def test_question_generation_prompt_omits_future_concept_metadata():
+def test_question_generation_prompt_uses_concept_evidence():
     concept = Concept(
         concept_id="concept_001",
         title="Multimodality",
@@ -116,8 +114,6 @@ def test_question_generation_prompt_omits_future_concept_metadata():
         importance="Important for grounding.",
         source_pages=[1],
         evidence_from_material=["Visual context can add meaning."],
-        prerequisites=["legacy prerequisite"],
-        common_misconceptions=["legacy misconception"],
     )
 
     _, user_prompt = build_question_generation_prompt(
@@ -126,11 +122,7 @@ def test_question_generation_prompt_omits_future_concept_metadata():
         questions_per_concept=3,
     )
 
-    concept_section = user_prompt.split("Relevant lecture excerpt:", maxsplit=1)[0]
-    assert "legacy prerequisite" not in user_prompt
-    assert "legacy misconception" not in user_prompt
-    assert "prerequisites" not in concept_section
-    assert "common_misconceptions" not in concept_section
+    assert "Visual context can add meaning." in user_prompt
     assert "Base questions on the concept summary, importance, evidence_from_material, source_pages" in user_prompt
 
 

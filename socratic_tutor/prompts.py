@@ -62,8 +62,6 @@ Rules:
     - Preserve technical terms when appropriate, but explain them naturally in the output language.
     - source_pages may be approximate if exact page information is unavailable.
     - evidence_from_material must quote or paraphrase specific material from the lecture.
-    - Do not generate prerequisites.
-    - Do not generate common_misconceptions.
     - Return JSON only.
     """
     return system_prompt, user_prompt
@@ -275,7 +273,6 @@ Feedback rules:
 - If any required_point is missing, do not set status to sufficient.
 - If there are misconceptions, status must be misconception.
 - Judge misconceptions from the student_answer, required_points, and question context only.
-- Do not use concept-level common_misconceptions to decide status or next_action.
 - For attempt 1 or 2 insufficient or misconception answers, do not reveal the full missing points to the student.
 - For attempt 1 or 2 insufficient or misconception answers, feedback_to_student should not list all missing_points.
 - Do not reveal the exact missing required point in feedback_to_student before the final attempt.

@@ -16,20 +16,6 @@ def test_concept_model_validates_required_fields():
     assert concept.title == "Overfitting"
 
 
-def test_concept_model_defaults_future_metadata_fields():
-    concept = Concept(
-        concept_id="concept_001",
-        title="Overfitting",
-        summary="Model fits training data too closely.",
-        importance="Central to generalization.",
-        source_pages=[1],
-        evidence_from_material=["Training error can be low while test error is high."],
-    )
-
-    assert concept.prerequisites == []
-    assert concept.common_misconceptions == []
-
-
 def test_question_model_validates_allowed_question_types():
     with pytest.raises(ValidationError):
         Question(
