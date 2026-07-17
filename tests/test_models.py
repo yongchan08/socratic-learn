@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from socratic_tutor.models import AnswerEvaluation, Concept, Question
+from socratic_tutor.models import AnswerEvaluation, Concept, Question, RequiredPoint
+
+
+def _point(text: str, index: int = 1) -> RequiredPoint:
+    return RequiredPoint(
+        point_id=f"rp_{index:03d}", text=text, gentle_hint="Think about it.", direct_hint="Explain it directly."
+    )
 
 
 def test_concept_model_validates_required_fields():
@@ -23,33 +29,34 @@ def test_question_model_validates_allowed_question_types():
             concept_id="concept_001",
             question_type="multiple_choice",
             question="What is overfitting?",
-            required_points=["generalization"],
+            required_points=[_point("generalization")],
         )
 
 
-def test_question_model_ignores_legacy_optional_fields():
+def test_question_model_ignores_unrelated_extra_fields():
     question = Question.model_validate(
         {
             "question_id": "q_001_001",
             "concept_id": "concept_001",
             "question_type": "explanation",
             "question": "Explain overfitting.",
-            "required_points": ["generalization"],
+            "required_points": [{
+                "point_id": "rp_001", "text": "generalization",
+                "gentle_hint": "Think about test data.", "direct_hint": "Compare the results.",
+            }],
             "optional_points": ["legacy optional"],
             "common_missing_points": ["legacy common missing"],
-            "hints": ["Think about test data."],
             "source_pages": [1],
         }
     )
 
-    assert question.required_points == ["generalization"]
+    assert question.required_point_texts == ["generalization"]
     assert not hasattr(question, "optional_points")
     assert not hasattr(question, "common_missing_points")
-    assert question.point_hints[0].required_point == "generalization"
-    assert question.point_hints[0].gentle == "Think about test data."
+    assert question.required_points[0].gentle_hint == "Think about test data."
 
 
-def test_question_model_rejects_point_hint_linked_to_different_required_point():
+def test_question_model_rejects_out_of_order_required_point_id():
     with pytest.raises(ValidationError):
         Question.model_validate(
             {
@@ -57,15 +64,11 @@ def test_question_model_rejects_point_hint_linked_to_different_required_point():
                 "concept_id": "concept_001",
                 "question_type": "explanation",
                 "question": "Explain overfitting.",
-                "required_points": ["generalization"],
-                "point_hints": [
-                    {
-                        "point_id": "rp_001",
-                        "required_point": "training speed",
-                        "gentle": "Think about unseen data.",
-                        "direct": "Compare training and test performance.",
-                    }
-                ],
+                "required_points": [{
+                    "point_id": "rp_002", "text": "generalization",
+                    "gentle_hint": "Think about unseen data.",
+                    "direct_hint": "Compare training and test performance.",
+                }],
             }
         )
 

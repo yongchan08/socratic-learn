@@ -19,7 +19,7 @@ def test_llm_client_sets_explicit_connection_and_response_timeouts(monkeypatch):
 
     timeout = FakeOpenAI.kwargs["timeout"]
     assert timeout.connect == 10.0
-    assert timeout.read == 45.0
+    assert timeout.read == 70.0
     assert FakeOpenAI.kwargs["max_retries"] == 1
 
 
@@ -30,6 +30,7 @@ class SequenceCompletions:
 
     def create(self, **kwargs):
         self.call_count += 1
+        self.last_kwargs = kwargs
         content = next(self.contents)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
@@ -45,6 +46,18 @@ def test_complete_json_repairs_invalid_json_once():
 
     assert result == {"concepts": []}
     assert completions.call_count == 2
+
+
+def test_complete_json_omits_temperature_for_gpt_5_models():
+    completions = SequenceCompletions(['{"concepts": []}'])
+    client = llm_client.LLMClient.__new__(llm_client.LLMClient)
+    client.model = "gpt-5-mini"
+    client.temperature = 0.2
+    client.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    client.complete_json("system", "user")
+
+    assert "temperature" not in completions.last_kwargs
 
 
 def test_complete_json_stops_after_one_json_repair():

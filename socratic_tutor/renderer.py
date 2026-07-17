@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .models import AnswerEvaluation, Concept, Question, SessionSummary
+from .models import AnswerEvaluation, Concept, Question, SessionSummary, StudySession
 
 
 console = Console()
@@ -113,3 +113,20 @@ def print_session_summary(summary: SessionSummary) -> None:
     for index, question in enumerate(summary.recommended_review_questions, start=1):
         console.print(f"{index}. {question}")
     console.print(f"\n[bold]종합 피드백:[/bold] {summary.overall_feedback}")
+
+
+def print_required_points_report(session: StudySession) -> None:
+    answers_by_question = {answer.question_id: answer for answer in session.answers}
+    print_header("개념별 필수 요소 리포트")
+    for concept in session.concepts:
+        console.print(f"\n[bold]{concept.title}[/bold]")
+        for question in (item for item in session.questions if item.concept_id == concept.concept_id):
+            answer = answers_by_question.get(question.question_id)
+            console.print(f"[cyan]{question.question_type}[/cyan] {question.question}")
+            if answer is None:
+                console.print("- 평가 기록 없음")
+                continue
+            matched = answer.evaluation.matched_points or ["없음"]
+            missing = answer.evaluation.missing_points or ["없음"]
+            console.print(f"- 충족: {', '.join(matched)}")
+            console.print(f"- 미충족: {', '.join(missing)}")

@@ -4,7 +4,8 @@ import re
 from pathlib import Path
 
 from .models import ParsedDocument, ParsedPage
-from .utils import short_uuid, utc_now
+from .storage import compute_file_hash
+from .utils import utc_now
 
 
 PDF_SIGNATURE = b"%PDF-"
@@ -26,7 +27,7 @@ def parse_pdf_to_markdown(pdf_path: str) -> ParsedDocument:
     pages = split_markdown_into_pages(markdown)
 
     return ParsedDocument(
-        document_id=short_uuid("doc"),
+        document_id=f"doc_{compute_file_hash(path)[:8]}",
         source_path=str(path),
         title=path.stem,
         markdown=markdown,

@@ -11,6 +11,7 @@ from .evaluator import MAX_ATTEMPTS_PER_QUESTION, evaluate_answer
 from .models import (
     AnswerEvaluation,
     Concept,
+    ConceptAnswer,
     Question,
     SessionSummary,
     StudentAnswer,
@@ -21,8 +22,8 @@ from .renderer import console, print_evaluation, print_question
 from .utils import utc_now
 
 
-ANSWER_PROMPT = "답변 (/quit 종료, /skip 건너뛰기, /help 도움말)"
-HELP_TEXT = "/skip 현재 질문 건너뛰기\n/quit 현재까지 답변으로 세션 종료 및 요약\n/help 사용 가능한 명령어 표시"
+ANSWER_PROMPT = "이 개념에 대한 생각을 적어보세요 (/quit 종료, /skip 건너뛰기, /help 도움말)"
+HELP_TEXT = "/skip 현재 개념 건너뛰기\n/quit 현재까지 답변으로 종료 및 리포트 생성\n/help 사용 가능한 명령어 표시"
 END_COMMANDS = {"/quit", "/exit", "/done"}
 
 
@@ -36,7 +37,6 @@ def run_interactive_session(
     session = StudySession(
         session_id=f"session_{utc_now().strftime('%Y%m%d_%H%M%S')}",
         document_id=document_id,
-        subject=config.subject,
         difficulty=config.difficulty,
         output_language=config.output_language,
         concepts=concepts,
@@ -46,14 +46,13 @@ def run_interactive_session(
 
     concept_by_id = {concept.concept_id: concept for concept in concepts}
     total = len(questions)
-
     for index, question in enumerate(questions, start=1):
         concept = concept_by_id[question.concept_id]
         attempts = 0
         while attempts < MAX_ATTEMPTS_PER_QUESTION:
             print_question(concept, question, index, total)
             try:
-                answer_text = typer.prompt(ANSWER_PROMPT).strip()
+                answer_text = typer.prompt("답변 (/quit 종료, /skip 건너뛰기, /help 도움말)").strip()
             except (KeyboardInterrupt, EOFError, typer.Abort):
                 console.print("\n[yellow]세션을 종료합니다. 현재까지의 답변으로 요약을 생성합니다.[/yellow]")
                 session.ended_at = utc_now()
@@ -75,11 +74,7 @@ def run_interactive_session(
 
             attempts += 1
             evaluation = evaluate_answer(
-                llm_client,
-                question,
-                answer_text,
-                attempts,
-                output_language=config.output_language,
+                llm_client, question, answer_text, attempts, output_language=config.output_language,
             )
             session.answers.append(
                 StudentAnswer(
@@ -92,19 +87,95 @@ def run_interactive_session(
                 )
             )
             print_evaluation(evaluation, attempts)
-
-            if evaluation.next_action == "next_question":
-                if evaluation.reveal_missing_points and attempts >= MAX_ATTEMPTS_PER_QUESTION:
-                    console.print("[yellow]최대 시도 횟수에 도달해 다음 질문으로 넘어갑니다.[/yellow]")
-                else:
-                    console.print("[green]다음 질문으로 넘어갑니다.[/green]")
-                break
-            if attempts >= MAX_ATTEMPTS_PER_QUESTION:
-                console.print("[yellow]최대 시도 횟수에 도달해 다음 질문으로 넘어갑니다.[/yellow]")
+            if evaluation.next_action == "next_question" or attempts >= MAX_ATTEMPTS_PER_QUESTION:
                 break
 
     session.ended_at = utc_now()
     return session
+
+
+def run_concept_review_session(
+    document_id: str,
+    concepts: list[Concept],
+    questions: list[Question],
+    config: AppConfig,
+    llm_client: object,
+) -> StudySession:
+    """개념별 자유 답변을 먼저 수집한 뒤 질문별 required_points를 일괄 평가합니다."""
+    session = StudySession(
+        session_id=f"concept_review_{utc_now().strftime('%Y%m%d_%H%M%S')}",
+        document_id=document_id,
+        difficulty=config.difficulty,
+        output_language=config.output_language,
+        concepts=concepts,
+        questions=questions,
+        started_at=utc_now(),
+    )
+    for index, concept in enumerate(concepts, start=1):
+        while True:
+            console.print(f"\n[bold][개념 {index}/{len(concepts)}] {concept.title}[/bold]")
+            try:
+                answer_text = typer.prompt(ANSWER_PROMPT).strip()
+            except (KeyboardInterrupt, EOFError, typer.Abort):
+                session.ended_at = utc_now()
+                evaluate_concept_answers(session, llm_client)
+                return session
+            if not answer_text:
+                console.print("[yellow]답변이 비어 있어요. 한 문장이라도 입력해보세요.[/yellow]")
+                continue
+            if answer_text == "/help":
+                console.print(HELP_TEXT)
+                continue
+            if answer_text in END_COMMANDS:
+                session.ended_at = utc_now()
+                evaluate_concept_answers(session, llm_client)
+                return session
+            session.concept_answers.append(_concept_answer(concept, answer_text))
+            break
+    session.ended_at = utc_now()
+    evaluate_concept_answers(session, llm_client)
+    return session
+
+
+def _concept_answer(concept: Concept, answer_text: str) -> ConceptAnswer:
+    return ConceptAnswer(
+        answer_id=f"concept_ans_{uuid.uuid4().hex[:8]}",
+        concept_id=concept.concept_id,
+        answer_text=answer_text,
+        created_at=utc_now(),
+    )
+
+
+def evaluate_concept_answers(session: StudySession, llm_client: object) -> list[StudentAnswer]:
+    """모든 개념 답변 수집 후 질문별 required_points 충족 여부를 일괄 평가합니다."""
+    if session.answers:
+        return session.answers
+    questions_by_concept: dict[str, list[Question]] = defaultdict(list)
+    for question in session.questions:
+        questions_by_concept[question.concept_id].append(question)
+
+    for concept_answer in session.concept_answers:
+        for question in questions_by_concept.get(concept_answer.concept_id, []):
+            if concept_answer.answer_text == "/skip":
+                evaluated = _skipped_answer(question, 1)
+            else:
+                evaluation = evaluate_answer(
+                    llm_client,
+                    question,
+                    concept_answer.answer_text,
+                    3,
+                    output_language=session.output_language,
+                )
+                evaluated = StudentAnswer(
+                    answer_id=f"ans_{uuid.uuid4().hex[:8]}",
+                    question_id=question.question_id,
+                    attempt_number=1,
+                    answer_text=concept_answer.answer_text,
+                    evaluation=evaluation,
+                    created_at=utc_now(),
+                )
+            session.answers.append(evaluated)
+    return session.answers
 
 
 def _skipped_answer(question: Question, attempt_number: int) -> StudentAnswer:
@@ -115,7 +186,7 @@ def _skipped_answer(question: Question, attempt_number: int) -> StudentAnswer:
         answer_text="/skip",
         evaluation=AnswerEvaluation(
             matched_points=[],
-            missing_points=question.required_points,
+            missing_points=question.required_point_texts,
             misconceptions=[],
             score=0,
             status="insufficient",

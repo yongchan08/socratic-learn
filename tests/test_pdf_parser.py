@@ -31,6 +31,19 @@ def test_returns_parsed_document_for_valid_pdf_fixture(tmp_path, monkeypatch):
     assert doc.pages
 
 
+def test_document_id_is_stable_for_same_pdf_content(tmp_path, monkeypatch):
+    first = tmp_path / "first.pdf"
+    second = tmp_path / "second.pdf"
+    first.write_bytes(b"%PDF-1.4\nsame content")
+    second.write_bytes(first.read_bytes())
+    monkeypatch.setattr(pdf_parser, "_to_markdown", lambda path: "Lecture text")
+
+    first_doc = pdf_parser.parse_pdf_to_markdown(str(first))
+    second_doc = pdf_parser.parse_pdf_to_markdown(str(second))
+
+    assert first_doc.document_id == second_doc.document_id
+
+
 def test_rejects_file_with_pdf_extension_but_invalid_signature(tmp_path):
     pdf_file = tmp_path / "fake.pdf"
     pdf_file.write_bytes(b"not a pdf")

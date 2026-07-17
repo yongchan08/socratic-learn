@@ -4,11 +4,11 @@ from pydantic import ValidationError
 from socratic_tutor.config import DEFAULT_MODEL, AppConfig
 
 
-def test_config_default_model_is_gpt_4_1():
+def test_config_default_model_is_gpt_5_mini():
     config = AppConfig()
 
-    assert DEFAULT_MODEL == "gpt-4.1"
-    assert config.model == "gpt-4.1"
+    assert DEFAULT_MODEL == "gpt-5-mini"
+    assert config.model == "gpt-5-mini"
 
 
 def test_config_default_output_language_is_ko():

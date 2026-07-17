@@ -8,16 +8,15 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-5-mini"
+MAX_CONCEPTS = 5
+QUESTIONS_PER_CONCEPT = 2
 
 
 class AppConfig(BaseModel):
     pdf_path: Path | None = None
-    subject: str | None = None
     difficulty: Literal["easy", "normal", "hard"] = "normal"
     output_language: Literal["ko", "en"] = "ko"
-    max_concepts: int = Field(default=7, ge=1, le=10)
-    questions_per_concept: int = Field(default=3, ge=1, le=3)
     model: str = DEFAULT_MODEL
     output_dir: Path = Path("./outputs")
     cache_dir: Path = Path("./cache")
@@ -27,11 +26,8 @@ class AppConfig(BaseModel):
 
 def load_app_config(
     pdf: str | None = None,
-    subject: str | None = None,
     difficulty: str = "normal",
     output_language: str = "ko",
-    max_concepts: int = 7,
-    questions_per_concept: int = 3,
     model: str | None = None,
     output_dir: str = "./outputs",
     cache_dir: str = "./cache",
@@ -41,11 +37,8 @@ def load_app_config(
     resolved_model = model or os.getenv("OPENAI_MODEL") or DEFAULT_MODEL
     return AppConfig(
         pdf_path=Path(pdf) if pdf else None,
-        subject=subject,
         difficulty=difficulty,
         output_language=output_language,
-        max_concepts=max_concepts,
-        questions_per_concept=questions_per_concept,
         model=resolved_model,
         output_dir=Path(output_dir),
         cache_dir=Path(cache_dir),

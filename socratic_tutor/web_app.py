@@ -75,6 +75,19 @@ def save_validated_pdf_upload(pdf: UploadFile, target: Path) -> None:
         raise
 
 
+def upload_target(filename: str) -> Path:
+    upload_dir = ensure_dir(UPLOAD_DIR / uuid.uuid4().hex[:8])
+    return upload_dir / Path(filename).name
+
+
+def remove_uploaded_pdf(target: Path) -> None:
+    target.unlink(missing_ok=True)
+    try:
+        target.parent.rmdir()
+    except OSError:
+        pass
+
+
 def stream_queue_events(event_queue: queue.Queue, heartbeat_seconds: float = SSE_HEARTBEAT_SECONDS):
     while True:
         try:
@@ -90,50 +103,48 @@ def stream_queue_events(event_queue: queue.Queue, heartbeat_seconds: float = SSE
 @app.post("/api/sessions")
 def create_session(
     pdf: UploadFile = File(),
-    subject: str | None = Form(None),
     difficulty: str = Form("normal"),
     output_language: str = Form("ko"),
-    max_concepts: int = Form(7),
-    questions_per_concept: int = Form(3),
     model: str | None = Form(None),
     skip_cache: bool = Form(False),
+    session_mode: str = Form("study"),
 ) -> dict:
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
     ensure_dir(UPLOAD_DIR)
-    target = UPLOAD_DIR / f"{Path(pdf.filename).stem}_{uuid.uuid4().hex[:8]}{Path(pdf.filename).suffix}"
-    save_validated_pdf_upload(pdf, target)
+    target = upload_target(pdf.filename)
+    try:
+        save_validated_pdf_upload(pdf, target)
+    except Exception:
+        remove_uploaded_pdf(target)
+        raise
 
     try:
         session = manager.create_session(
             pdf_path=target,
-            subject=subject,
             difficulty=difficulty,
             output_language=output_language,
-            max_concepts=max_concepts,
-            questions_per_concept=questions_per_concept,
             model=model,
             skip_cache=skip_cache,
+            session_mode=session_mode,
         )
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=format_pipeline_error(exc)) from exc
     finally:
-        target.unlink(missing_ok=True)
+        remove_uploaded_pdf(target)
     return manager.snapshot(session.session_id)
 
 
 @app.post("/api/sessions/stream")
 def create_session_stream(
     pdf: UploadFile = File(),
-    subject: str | None = Form(None),
     difficulty: str = Form("normal"),
     output_language: str = Form("ko"),
-    max_concepts: int = Form(7),
-    questions_per_concept: int = Form(3),
     model: str | None = Form(None),
     skip_cache: bool = Form(False),
+    session_mode: str = Form("study"),
 ) -> StreamingResponse:
     """세션 생성 진행 상황을 SSE(Server-Sent Events)로 실시간 스트리밍합니다.
 
@@ -148,8 +159,12 @@ def create_session_stream(
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
 
     ensure_dir(UPLOAD_DIR)
-    target = UPLOAD_DIR / f"{Path(pdf.filename).stem}_{uuid.uuid4().hex[:8]}{Path(pdf.filename).suffix}"
-    save_validated_pdf_upload(pdf, target)
+    target = upload_target(pdf.filename)
+    try:
+        save_validated_pdf_upload(pdf, target)
+    except Exception:
+        remove_uploaded_pdf(target)
+        raise
 
     # 이벤트 큐: 백그라운드 스레드 → SSE 제너레이터
     event_queue: queue.Queue = queue.Queue()
@@ -171,13 +186,11 @@ def create_session_stream(
 
             session = manager.create_session(
                 pdf_path=target,
-                subject=subject,
                 difficulty=difficulty,
                 output_language=output_language,
-                max_concepts=max_concepts,
-                questions_per_concept=questions_per_concept,
                 model=model,
                 skip_cache=skip_cache,
+                session_mode=session_mode,
                 on_progress={
                     "after_parse": lambda: event_queue.put(
                         _sse({"step": "concepts", "message": "🔍 핵심 개념 발굴 중..."})
@@ -195,7 +208,7 @@ def create_session_stream(
         except Exception as exc:
             event_queue.put(_sse({"step": "error", "message": format_pipeline_error(exc)}))
         finally:
-            target.unlink(missing_ok=True)
+            remove_uploaded_pdf(target)
             event_queue.put(None)  # 종료 신호
 
     thread = threading.Thread(target=_worker, daemon=True)

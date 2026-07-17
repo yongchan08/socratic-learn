@@ -29,11 +29,11 @@ class Concept(BaseModel):
     evidence_from_material: list[str] = Field(default_factory=list)
 
 
-class PointHint(BaseModel):
+class RequiredPoint(BaseModel):
     point_id: str
-    required_point: str
-    gentle: str
-    direct: str
+    text: str
+    gentle_hint: str
+    direct_hint: str
 
 
 class Question(BaseModel):
@@ -43,34 +43,20 @@ class Question(BaseModel):
     concept_id: str
     question_type: Literal["explanation", "comparison", "application"]
     question: str
-    required_points: list[str]
-    point_hints: list[PointHint] = Field(default_factory=list)
-    hints: list[str] = Field(default_factory=list)
+    required_points: list[RequiredPoint]
     source_pages: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_point_hints(self) -> "Question":
-        if not self.point_hints and len(self.hints) == len(self.required_points):
-            self.point_hints = [
-                PointHint(
-                    point_id=f"rp_{index:03d}",
-                    required_point=point,
-                    gentle=hint,
-                    direct=hint,
-                )
-                for index, (point, hint) in enumerate(zip(self.required_points, self.hints), start=1)
-            ]
-        if not self.point_hints:
-            return self
-
-        linked_points = [hint.required_point for hint in self.point_hints]
-        linked_ids = [hint.point_id for hint in self.point_hints]
-        if linked_points != self.required_points:
-            raise ValueError("point_hints must cover required_points once and in the same order")
+    def validate_required_point_ids(self) -> "Question":
+        linked_ids = [point.point_id for point in self.required_points]
         expected_ids = [f"rp_{index:03d}" for index in range(1, len(self.required_points) + 1)]
         if linked_ids != expected_ids:
-            raise ValueError("point_hints point_id values must follow rp_001, rp_002, ... order")
+            raise ValueError("required_points point_id values must follow rp_001, rp_002, ... order")
         return self
+
+    @property
+    def required_point_texts(self) -> list[str]:
+        return [point.text for point in self.required_points]
 
 
 class AnswerEvaluation(BaseModel):
@@ -104,6 +90,13 @@ class StudentAnswer(BaseModel):
     created_at: datetime
 
 
+class ConceptAnswer(BaseModel):
+    answer_id: str
+    concept_id: str
+    answer_text: str
+    created_at: datetime
+
+
 class SessionSummary(BaseModel):
     strong_concepts: list[str] = Field(default_factory=list)
     weak_concepts: list[str] = Field(default_factory=list)
@@ -115,12 +108,24 @@ class SessionSummary(BaseModel):
 class StudySession(BaseModel):
     session_id: str
     document_id: str
-    subject: str | None = None
     difficulty: Literal["easy", "normal", "hard"] = "normal"
     output_language: Literal["ko", "en"] = "ko"
     concepts: list[Concept]
     questions: list[Question]
+    concept_answers: list[ConceptAnswer] = Field(default_factory=list)
     answers: list[StudentAnswer] = Field(default_factory=list)
+    summary: SessionSummary | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
+class ConceptReviewReport(BaseModel):
+    review_id: str
+    document_id: str
+    concepts_file: str
+    questions_file: str
+    concept_answers: list[ConceptAnswer] = Field(default_factory=list)
+    evaluations: list[StudentAnswer] = Field(default_factory=list)
     summary: SessionSummary | None = None
     started_at: datetime
     ended_at: datetime | None = None
