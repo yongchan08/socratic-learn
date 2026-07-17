@@ -1,10 +1,16 @@
 from socratic_tutor.models import Concept
-from socratic_tutor.models import Question
+from socratic_tutor.models import Question, RequiredPoint
 from socratic_tutor.prompts import (
     build_answer_evaluation_prompt,
     build_concept_extraction_prompt,
     build_question_generation_prompt,
 )
+
+
+def _point(text: str, index: int = 1) -> RequiredPoint:
+    return RequiredPoint(
+        point_id=f"rp_{index:03d}", text=text, gentle_hint="Think about it.", direct_hint="Explain it directly."
+    )
 
 
 def test_question_generation_prompt_avoids_compound_questions():
@@ -19,24 +25,42 @@ def test_question_generation_prompt_avoids_compound_questions():
     _, user_prompt = build_question_generation_prompt(
         concept=concept,
         document_excerpt="Visual context can add meaning.",
-        questions_per_concept=3,
     )
 
     assert "Each question should ask one main thing only" in user_prompt
     assert "Avoid compound questions" in user_prompt
 
 
+def test_question_generation_prompt_requires_explanation_then_transfer_question():
+    concept = Concept(
+        concept_id="concept_001",
+        title="Overfitting",
+        summary="The model fits training data too closely.",
+        importance="It harms generalization.",
+        source_pages=[1],
+    )
+
+    _, user_prompt = build_question_generation_prompt(
+        concept=concept,
+        document_excerpt="Training and test errors can diverge.",
+    )
+
+    assert 'The first question_type must be "explanation"' in user_prompt
+    assert 'The second question_type must be either "comparison" or "application"' in user_prompt
+    assert "especially its summary and core principle" in user_prompt
+
+
 def test_concept_extraction_prompt_uses_current_schema():
     _, user_prompt = build_concept_extraction_prompt(
         markdown="Training error and test error can diverge.",
-        subject="Machine Learning",
         difficulty="normal",
-        max_concepts=5,
     )
 
     json_shape = user_prompt.split("Rules:", maxsplit=1)[0]
     assert '"importance"' in json_shape
     assert '"evidence_from_material"' in json_shape
+    assert "up to a maximum of 5" in user_prompt
+    assert "Do not add marginal concepts just to reach a particular count" in user_prompt
 
 
 def test_question_generation_prompt_uses_korean_output_language():
@@ -51,7 +75,6 @@ def test_question_generation_prompt_uses_korean_output_language():
     _, user_prompt = build_question_generation_prompt(
         concept=concept,
         document_excerpt="Visual context can add meaning.",
-        questions_per_concept=3,
         output_language="ko",
     )
 
@@ -66,7 +89,7 @@ def test_answer_evaluation_prompt_accepts_korean_answers():
         concept_id="concept_001",
         question_type="explanation",
         question="사람이 언어를 이해할 때 단어만으로 충분할까요?",
-        required_points=["언어는 맥락과 함께 이해된다"],
+        required_points=[_point("언어는 맥락과 함께 이해된다")],
     )
 
     _, user_prompt = build_answer_evaluation_prompt(
@@ -95,15 +118,14 @@ def test_question_generation_prompt_does_not_generate_optional_or_common_missing
     _, user_prompt = build_question_generation_prompt(
         concept=concept,
         document_excerpt="Visual context can add meaning.",
-        questions_per_concept=3,
     )
 
     assert '"optional_points"' not in user_prompt
     assert '"common_missing_points"' not in user_prompt
     assert "Do not generate optional_points" in user_prompt
     assert "Do not generate common_missing_points" in user_prompt
-    assert '"point_hints"' in user_prompt
-    assert "Create exactly one point_hints entry for every required_points entry" in user_prompt
+    assert '"gentle_hint"' in user_prompt
+    assert "Each required point object must contain its criterion text and both linked hints" in user_prompt
 
 
 def test_question_generation_prompt_uses_concept_evidence():
@@ -119,7 +141,6 @@ def test_question_generation_prompt_uses_concept_evidence():
     _, user_prompt = build_question_generation_prompt(
         concept=concept,
         document_excerpt="Visual context can add meaning.",
-        questions_per_concept=3,
     )
 
     assert "Visual context can add meaning." in user_prompt
@@ -132,7 +153,7 @@ def test_answer_evaluation_prompt_uses_required_points_only():
         concept_id="concept_001",
         question_type="explanation",
         question="Explain overfitting.",
-        required_points=["generalization"],
+        required_points=[_point("generalization")],
     )
 
     _, user_prompt = build_answer_evaluation_prompt(
@@ -152,7 +173,7 @@ def test_answer_evaluation_prompt_separates_feedback_note_and_followup():
         concept_id="concept_001",
         question_type="explanation",
         question="Explain learnability.",
-        required_points=["easy to learn", "why it matters"],
+        required_points=[_point("easy to learn"), _point("why it matters", 2)],
     )
 
     _, user_prompt = build_answer_evaluation_prompt(
@@ -178,7 +199,7 @@ def test_answer_evaluation_prompt_documents_three_attempt_policy():
         concept_id="concept_001",
         question_type="explanation",
         question="Explain memorability.",
-        required_points=["easy to remember after a long time"],
+        required_points=[_point("easy to remember after a long time")],
     )
 
     _, user_prompt = build_answer_evaluation_prompt(

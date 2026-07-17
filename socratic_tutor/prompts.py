@@ -7,9 +7,7 @@ from .models import Concept, Question, StudySession
 
 def build_concept_extraction_prompt(
     markdown: str,
-    subject: str | None,
     difficulty: str,
-    max_concepts: int,
     output_language: str = "ko",
 ) -> tuple[str, str]:
     language_name = _language_name(output_language)
@@ -22,14 +20,11 @@ def build_concept_extraction_prompt(
     )
     user_prompt = f"""Analyze the lecture material below.
 
-Subject:
-{subject or "Not specified"}
-
 Difficulty:
 {difficulty}
 
 Maximum number of concepts:
-{max_concepts}
+5
 
 Output language:
 {language_name}
@@ -52,7 +47,9 @@ Lecture material:
 }}
 
 Rules:
-- Extract 5 to {max_concepts} concepts unless the material is too short.
+- Decide how many concepts are needed based on the lecture's content and importance.
+- Extract only the important concepts needed to understand the lecture, up to a maximum of 5.
+- Do not add marginal concepts just to reach a particular count.
 - Prefer concepts that are central to understanding the lecture.
 - Do not output trivial section titles unless they are actual concepts.
 - Generate all user-facing fields in Korean if output_language is "ko".
@@ -70,7 +67,6 @@ Rules:
 def build_question_generation_prompt(
     concept: Concept,
     document_excerpt: str,
-    questions_per_concept: int,
     output_language: str = "ko",
 ) -> tuple[str, str]:
     language_name = _language_name(output_language)
@@ -95,7 +91,9 @@ def build_question_generation_prompt(
 Relevant lecture excerpt:
 {document_excerpt}
 
-Generate {questions_per_concept} Socratic questions.
+Generate exactly 2 Socratic questions in this order:
+1. One explanation question that directly checks understanding of the concept itself, especially its summary and core principle.
+2. One comparison or application question that checks whether the student can relate or apply the concept using the lecture material.
 
 Output language:
 {language_name}
@@ -112,13 +110,12 @@ Return JSON in this exact shape:
     {{
       "question_type": "explanation",
       "question": "string",
-      "required_points": ["string"],
-      "point_hints": [
+      "required_points": [
         {{
           "point_id": "rp_001",
-          "required_point": "exact string copied from required_points",
-          "gentle": "indirect Socratic question",
-          "direct": "more direct Socratic question"
+          "text": "grading criterion",
+          "gentle_hint": "indirect Socratic question",
+          "direct_hint": "more direct Socratic question"
         }}
       ],
       "source_pages": [1]
@@ -127,6 +124,9 @@ Return JSON in this exact shape:
 }}
 
 Question generation rules:
+- The first question_type must be "explanation".
+- The second question_type must be either "comparison" or "application".
+- Generate exactly one explanation question; do not generate two questions of the same type.
 - Each question must be answerable from the lecture material.
 - Base questions on the concept summary, importance, evidence_from_material, source_pages, and relevant lecture excerpt.
 - Each question should ask one main thing only.
@@ -141,15 +141,14 @@ Question generation rules:
 - In Korean, prefer a Socratic speaking style such as "~인가?", "~보게", "~설명해보게", "~말해보게", or "그대는".
 - Avoid plain textbook phrasing such as "...설명해보세요" unless the tone still clearly sounds like Socrates.
 - Preserve technical terms when appropriate, but explain them naturally in the output language.
-- User-facing question fields are question, required_points, and point_hints.
+- User-facing question fields are question and required_points.
 - Do not generate optional_points.
 - Do not generate common_missing_points.
 - required_points are the only grading criteria for this question.
-- Create exactly one point_hints entry for every required_points entry.
-- point_hints.required_point must exactly copy its corresponding required_points string.
 - Assign stable point IDs in required_points order: rp_001, rp_002, and so on.
-- gentle must guide the first retry without stating the required point directly.
-- direct must guide the second retry more explicitly without giving a complete model answer.
+- Each required point object must contain its criterion text and both linked hints.
+- gentle_hint must guide the first retry without stating the required point directly.
+- direct_hint must guide the second retry more explicitly without giving a complete model answer.
 - Generate no more than one question of the same type unless necessary.
 - Return JSON only.
 """
@@ -179,10 +178,7 @@ Question type:
 {question.question_type}
 
 Required points:
-{question.required_points}
-
-Available hints:
-{[hint.model_dump() for hint in question.point_hints] or question.hints}
+{[point.model_dump() for point in question.required_points]}
 
 Student answer:
 {student_answer}
@@ -283,7 +279,7 @@ Feedback rules:
 - Put the reasoning path toward the missing idea in socratic_follow_up.
 - The feedback and the follow-up must not repeat the same sentence.
 - If next_action is ask_followup, feedback_to_student should be short and broad; socratic_follow_up should do the actual guidance.
-- socratic_follow_up should be based on missing_points and their linked point_hints.
+- socratic_follow_up should be based on missing_points and their linked required-point hints.
 - Use socratic_follow_up only when next_action is ask_followup.
 - Use improvement_note only when next_action is next_question.
 - improvement_note should explain what perspective would make the answer better.

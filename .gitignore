@@ -19,6 +19,3 @@ cache/
 outputs/
 pdfs/
 uploads/
-
-# Placeholder not needed because examples/sample.pdf is tracked
-examples/.gitkeep

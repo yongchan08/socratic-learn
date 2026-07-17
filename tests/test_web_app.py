@@ -6,7 +6,7 @@ import queue
 import pytest
 from fastapi import HTTPException, UploadFile
 
-from socratic_tutor.web_app import MAX_UPLOAD_BYTES, save_validated_pdf_upload, stream_queue_events
+from socratic_tutor.web_app import MAX_UPLOAD_BYTES, save_validated_pdf_upload, stream_queue_events, upload_target
 from socratic_tutor import web_app
 from socratic_tutor.web_service import WebStudyError
 
@@ -25,6 +25,15 @@ def test_save_validated_pdf_upload_streams_valid_file(tmp_path):
     save_validated_pdf_upload(upload, target)
 
     assert target.read_bytes() == b"%PDF-1.7\ncontent"
+
+
+def test_upload_target_preserves_original_filename_in_random_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_app, "UPLOAD_DIR", tmp_path)
+
+    target = upload_target("Redis.pdf")
+
+    assert target.name == "Redis.pdf"
+    assert target.parent.parent == tmp_path
 
 
 def test_save_validated_pdf_upload_rejects_oversized_file_and_removes_partial_file(tmp_path):
@@ -85,11 +94,8 @@ class FakeManager:
 def _create_session(upload):
     return web_app.create_session(
         pdf=upload,
-        subject=None,
         difficulty="normal",
         output_language="ko",
-        max_concepts=7,
-        questions_per_concept=3,
         model=None,
         skip_cache=False,
     )
@@ -98,11 +104,8 @@ def _create_session(upload):
 def _create_streaming_session(upload):
     return web_app.create_session_stream(
         pdf=upload,
-        subject=None,
         difficulty="normal",
         output_language="ko",
-        max_concepts=7,
-        questions_per_concept=3,
         model=None,
         skip_cache=False,
     )

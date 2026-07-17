@@ -8,12 +8,10 @@ const MAX_ATTEMPTS_PER_QUESTION = 3;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 const initialForm = {
-  subject: "",
   difficulty: "normal",
   outputLanguage: "ko",
-  maxConcepts: 7,
-  questionsPerConcept: 3,
   model: "",
+  sessionMode: "study",
 };
 
 /* ── SVG defs (ornaments) ────────────────────────────────────────────────── */
@@ -267,7 +265,8 @@ export function App() {
   }, []);
 
   const concepts = state?.session?.concepts ?? [];
-  const answers = state?.session?.answers ?? [];
+  const isConceptReview = state?.session_mode === "concept_review";
+  const answers = isConceptReview ? (state?.session?.concept_answers ?? []) : (state?.session?.answers ?? []);
   const currentQuestion = state?.current_question;
   const lastAnswer = state?.last_answer;
   const answeredQuestion = lastAnswer
@@ -275,13 +274,11 @@ export function App() {
     : null;
   const progress = state ? Math.round((state.current_index / Math.max(state.total_questions, 1)) * 100) : 0;
   const lastAnswerIsForCurrentQuestion = lastAnswer?.question_id === currentQuestion?.question_id;
-  const showFollowupEvaluation =
+  const showFollowupEvaluation = !isConceptReview &&
     lastAnswer?.evaluation && lastAnswerIsForCurrentQuestion && lastAnswer.evaluation.status !== "sufficient";
-  const showTransitionEvaluation =
-    lastAnswer?.evaluation &&
-    lastAnswer.evaluation.next_action === "next_question" &&
-    lastAnswer.answer_text !== "/skip" &&
-    !lastAnswerIsForCurrentQuestion &&
+  const showTransitionEvaluation = !isConceptReview &&
+    lastAnswer?.evaluation && lastAnswer.evaluation.next_action === "next_question" &&
+    lastAnswer.answer_text !== "/skip" && !lastAnswerIsForCurrentQuestion &&
     dismissedTransitionAnswerId !== lastAnswer.answer_id;
   const showEvaluationMessage = Boolean(showTransitionEvaluation || (!state?.completed && showFollowupEvaluation));
   const visibleQuestionId = showEvaluationMessage ? lastAnswer?.question_id : currentQuestion?.question_id;
@@ -342,11 +339,9 @@ export function App() {
 
     const payload = new FormData();
     payload.append("pdf", file);
-    payload.append("subject", form.subject);
     payload.append("difficulty", form.difficulty);
     payload.append("output_language", form.outputLanguage);
-    payload.append("max_concepts", form.maxConcepts);
-    payload.append("questions_per_concept", form.questionsPerConcept);
+    payload.append("session_mode", form.sessionMode);
     if (form.model) payload.append("model", form.model);
 
     const addStep = (label) => {
@@ -497,12 +492,6 @@ export function App() {
                     <div className="parch-upload-hint">
                       여기에 PDF 파일을 드래그하거나 클릭하여 업로드하세요.
                     </div>
-                    <input
-                      className="parch-input"
-                      value={form.subject}
-                      onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                      placeholder="수업 주제"
-                    />
                     <div className="parch-segmented" aria-label="난이도">
                       {["easy", "normal", "hard"].map((v) => (
                         <button
@@ -512,21 +501,11 @@ export function App() {
                         >{v}</button>
                       ))}
                     </div>
-                    <div className="parch-grid">
-                      <label className="parch-label">
-                        개념 수
-                        <input className="parch-input" type="number" min="1" max="10"
-                          value={form.maxConcepts}
-                          onChange={(e) => setForm({ ...form, maxConcepts: e.target.value })}
-                        />
-                      </label>
-                      <label className="parch-label">
-                        질문 수
-                        <input className="parch-input" type="number" min="1" max="3"
-                          value={form.questionsPerConcept}
-                          onChange={(e) => setForm({ ...form, questionsPerConcept: e.target.value })}
-                        />
-                      </label>
+                    <div className="parch-segmented" aria-label="학습 방식">
+                      <button type="button" className={form.sessionMode === "study" ? "active" : ""}
+                        onClick={() => setForm({ ...form, sessionMode: "study" })}>질문 학습</button>
+                      <button type="button" className={form.sessionMode === "concept_review" ? "active" : ""}
+                        onClick={() => setForm({ ...form, sessionMode: "concept_review" })}>개념 리포트</button>
                     </div>
                     <div className="parch-setting-strip" aria-label="학습 설정 요약">
                       <span>개념 추출</span>
@@ -759,17 +738,12 @@ export function App() {
                       <form onSubmit={submitAnswer}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                           <h2 className="srp-answer-title" id="answer-card-title">그대의 답변을 입력하세요.</h2>
-                          <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
+                          <span className="attempt-badge">
+                            {isConceptReview ? `개념 ${state.current_index + 1} / ${state.total_questions}` : `시도 ${visibleAttemptCount} / ${MAX_ATTEMPTS_PER_QUESTION}`}
+                          </span>
                         </div>
                         <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
-                        {visibleAttemptCount > 0 ? (
-                          <div style={{ margin: "8px 0 10px", padding: "8px 10px", background: "rgba(0,0,0,0.06)", borderRadius: 4, borderLeft: "2px solid rgba(99,75,42,.4)" }}>
-                            <p style={{ margin: "0 0 4px", color: "#5b4020", fontSize: 14, fontWeight: 760, letterSpacing: "0.04em" }}>질문</p>
-                            <p style={{ margin: 0, color: "#3a260f", fontSize: 16, lineHeight: 1.58, fontWeight: 620 }}>{currentQuestion.question}</p>
-                          </div>
-                        ) : (
-                          <p className="srp-answer-copy">완벽하지 않아도 괜찮습니다.<br/>생각을 드러내는 것이 먼저입니다.</p>
-                        )}
+                        <p className="srp-answer-copy">완벽하지 않아도 괜찮습니다.<br/>{isConceptReview ? "이 개념에 대해 이해한 내용을 자유롭게 적어보세요." : "생각을 드러내는 것이 먼저입니다."}</p>
                         <label className="srp-textarea-shell">
                           <span className="visually-hidden">답변 입력</span>
                           <textarea
@@ -819,6 +793,26 @@ export function App() {
                             ? <ul>{state.session.summary.strong_concepts.map((i) => <li key={i}>{i}</li>)}</ul>
                             : <p className="srp-muted">기록 없음</p>}
                         </div>
+                        {isConceptReview && (
+                          <div className="srp-summary-section">
+                            <h3>개념별 필수 요소 리포트</h3>
+                            {concepts.map((concept) => (
+                              <div key={concept.concept_id} style={{ marginBottom: 14 }}>
+                                <strong>{concept.title}</strong>
+                                {state.session.questions.filter((q) => q.concept_id === concept.concept_id).map((question) => {
+                                  const result = state.session.answers.find((item) => item.question_id === question.question_id);
+                                  return (
+                                    <div key={question.question_id} style={{ marginTop: 8 }}>
+                                      <p className="srp-muted">{question.question_type}</p>
+                                      <p>충족: {result?.evaluation?.matched_points?.join(", ") || "없음"}</p>
+                                      <p>미충족: {result?.evaluation?.missing_points?.join(", ") || "없음"}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div className="srp-summary-section">
                           <h3>복습 개념</h3>
                           {state.session.summary.weak_concepts.length

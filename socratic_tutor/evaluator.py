@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .models import AnswerEvaluation, PointHint, Question
+from .models import AnswerEvaluation, Question, RequiredPoint
 from .prompts import build_answer_evaluation_prompt
 
 
@@ -16,7 +16,7 @@ def normalize_evaluation(
     attempt_number: int | None = None,
     required_points: list[str] | None = None,
     student_answer: str | None = None,
-    point_hints: list[PointHint] | None = None,
+    required_point_definitions: list[RequiredPoint] | None = None,
 ) -> AnswerEvaluation:
     data = evaluation.model_dump()
     required_points = required_points or []
@@ -56,7 +56,7 @@ def normalize_evaluation(
         data["next_action"] = "ask_followup"
         data["reveal_missing_points"] = False
         data["improvement_note"] = None
-        _normalize_followup_feedback(data, current_attempt, point_hints or [])
+        _normalize_followup_feedback(data, current_attempt, required_point_definitions or [])
     else:
         data["next_action"] = "next_question"
         data["reveal_missing_points"] = True
@@ -66,25 +66,33 @@ def normalize_evaluation(
     return AnswerEvaluation.model_validate(data)
 
 
-def _normalize_followup_feedback(data: dict, attempt_number: int, point_hints: list[PointHint]) -> None:
+def _normalize_followup_feedback(
+    data: dict,
+    attempt_number: int,
+    required_points: list[RequiredPoint],
+) -> None:
     if _reveals_missing_point(data["feedback_to_student"], data["missing_points"]):
         data["feedback_to_student"] = _broad_feedback_for_status(data["status"])
 
-    follow_up = _linked_hint(data["missing_points"], point_hints, attempt_number)
+    follow_up = _linked_hint(data["missing_points"], required_points, attempt_number)
     follow_up = follow_up or data.get("socratic_follow_up") or data.get("hint")
     if not follow_up or _is_similar_text(data["feedback_to_student"], follow_up):
         follow_up = _fallback_follow_up()
     data["socratic_follow_up"] = follow_up
 
 
-def _linked_hint(missing_points: list[str], point_hints: list[PointHint], attempt_number: int) -> str | None:
+def _linked_hint(
+    missing_points: list[str],
+    required_points: list[RequiredPoint],
+    attempt_number: int,
+) -> str | None:
     if not missing_points:
         return None
     first_missing = missing_points[0]
-    linked = next((hint for hint in point_hints if hint.required_point == first_missing), None)
+    linked = next((point for point in required_points if point.text == first_missing), None)
     if linked is None:
         return None
-    return linked.gentle if attempt_number <= 1 else linked.direct
+    return linked.gentle_hint if attempt_number <= 1 else linked.direct_hint
 
 
 def _normalize_sufficient_feedback(data: dict) -> None:
@@ -178,9 +186,9 @@ def evaluate_answer(
     return normalize_evaluation(
         AnswerEvaluation.model_validate(payload),
         attempt_number=attempt_number,
-        required_points=question.required_points,
+        required_points=question.required_point_texts,
         student_answer=student_answer,
-        point_hints=question.point_hints,
+        required_point_definitions=question.required_points,
     )
 
 

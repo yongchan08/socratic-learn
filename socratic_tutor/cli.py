@@ -6,7 +6,14 @@ import typer
 
 from .config import load_app_config
 from .llm_client import LLMJSONParseError
-from .pipeline import document_output_dir, format_pipeline_error, inspect_session, run_parse_pipeline, run_study_pipeline
+from .pipeline import (
+    document_output_dir,
+    format_pipeline_error,
+    inspect_session,
+    run_concept_review_pipeline,
+    run_parse_pipeline,
+    run_study_pipeline,
+)
 from .renderer import print_error, print_success
 
 
@@ -32,11 +39,8 @@ def parse(
 @app.command()
 def start(
     pdf: Annotated[str, typer.Option("--pdf", help="PDF 파일 경로.")],
-    subject: Annotated[str | None, typer.Option("--subject")] = None,
     difficulty: Annotated[str, typer.Option("--difficulty")] = "normal",
     output_language: Annotated[str, typer.Option("--output-language")] = "ko",
-    max_concepts: Annotated[int, typer.Option("--max-concepts")] = 7,
-    questions_per_concept: Annotated[int, typer.Option("--questions-per-concept")] = 3,
     model: Annotated[str | None, typer.Option("--model")] = None,
     output_dir: Annotated[str, typer.Option("--output-dir")] = "./outputs",
     cache_dir: Annotated[str, typer.Option("--cache-dir")] = "./cache",
@@ -46,17 +50,43 @@ def start(
     try:
         config = load_app_config(
             pdf=pdf,
-            subject=subject,
             difficulty=difficulty,
             output_language=output_language,
-            max_concepts=max_concepts,
-            questions_per_concept=questions_per_concept,
             model=model,
             output_dir=output_dir,
             cache_dir=cache_dir,
             skip_cache=skip_cache,
         )
         run_study_pipeline(config)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        print_error(_humanize_error(exc))
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("concept-review")
+def concept_review(
+    pdf: Annotated[str, typer.Option("--pdf", help="PDF 파일 경로.")],
+    difficulty: Annotated[str, typer.Option("--difficulty")] = "normal",
+    output_language: Annotated[str, typer.Option("--output-language")] = "ko",
+    model: Annotated[str | None, typer.Option("--model")] = None,
+    output_dir: Annotated[str, typer.Option("--output-dir")] = "./outputs",
+    cache_dir: Annotated[str, typer.Option("--cache-dir")] = "./cache",
+    skip_cache: Annotated[bool, typer.Option("--skip-cache")] = False,
+) -> None:
+    """개념별 자유 답변을 수집한 뒤 required points 충족 여부를 일괄 평가합니다."""
+    try:
+        config = load_app_config(
+            pdf=pdf,
+            difficulty=difficulty,
+            output_language=output_language,
+            model=model,
+            output_dir=output_dir,
+            cache_dir=cache_dir,
+            skip_cache=skip_cache,
+        )
+        run_concept_review_pipeline(config)
     except typer.Exit:
         raise
     except Exception as exc:

@@ -6,13 +6,13 @@ from pathlib import Path
 import typer
 from pydantic import ValidationError
 
-from .config import AppConfig
+from .config import MAX_CONCEPTS, QUESTIONS_PER_CONCEPT, AppConfig
 from .llm_client import LLMClient
-from .models import Concept, ParsedDocument, Question, StudySession
+from .models import Concept, ConceptReviewReport, ParsedDocument, Question, StudySession
 from .pdf_parser import parse_pdf_to_markdown
 from .prompts import build_concept_extraction_prompt, build_question_generation_prompt
-from .renderer import console, print_concepts, print_header, print_session_summary, print_warning
-from .session import generate_session_summary, run_interactive_session
+from .renderer import console, print_concepts, print_header, print_required_points_report, print_session_summary, print_warning
+from .session import generate_session_summary, run_concept_review_session, run_interactive_session
 from .storage import cache_path, compute_file_hash, ensure_dir, legacy_cache_path, load_json, save_json, save_text
 from .utils import truncate_markdown, utc_now
 
@@ -69,6 +69,60 @@ def run_study_pipeline(config: AppConfig) -> StudySession:
     return session
 
 
+def run_concept_review_pipeline(config: AppConfig) -> StudySession:
+    """기존 학습 세션과 별개로 개념별 자유 답변 및 일괄 평가를 실행합니다."""
+    if not config.api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되어 있지 않습니다.\n.env 파일을 만들고 OPENAI_API_KEY를 추가하세요.")
+    llm_client = LLMClient(model=config.model, api_key=config.api_key)
+    parsed_doc, _ = parse_or_load_pdf(config)
+    concepts, questions = load_generated_learning_materials(parsed_doc, config)
+    session = run_concept_review_session(parsed_doc.document_id, concepts, questions, config, llm_client)
+    summary = generate_session_summary(session, llm_client)
+    save_path = save_concept_review_report(session, parsed_doc, config)
+    print_required_points_report(session)
+    print_session_summary(summary)
+    console.print(f"\n개념 리포트가 저장되었습니다:\n{save_path}")
+    return session
+
+
+def load_generated_learning_materials(
+    parsed_doc: ParsedDocument,
+    config: AppConfig,
+) -> tuple[list[Concept], list[Question]]:
+    output_dir = document_output_dir(config, parsed_doc)
+    concepts_path = output_dir / f"concepts_{parsed_doc.document_id}.json"
+    questions_path = output_dir / f"questions_{parsed_doc.document_id}.json"
+    missing = [path.name for path in (concepts_path, questions_path) if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "개념 리포트에 필요한 기존 학습 파일이 없습니다: "
+            f"{', '.join(missing)}\n먼저 같은 PDF로 start 기능을 실행해 개념과 질문을 생성하세요."
+        )
+    concepts = [Concept.model_validate(item) for item in load_json(concepts_path)]
+    questions = [Question.model_validate(item) for item in load_json(questions_path)]
+    return concepts, questions
+
+
+def save_concept_review_report(
+    session: StudySession,
+    parsed_doc: ParsedDocument,
+    config: AppConfig,
+) -> Path:
+    output_dir = document_output_dir(config, parsed_doc)
+    report = ConceptReviewReport(
+        review_id=session.session_id,
+        document_id=session.document_id,
+        concepts_file=f"concepts_{parsed_doc.document_id}.json",
+        questions_file=f"questions_{parsed_doc.document_id}.json",
+        concept_answers=session.concept_answers,
+        evaluations=session.answers,
+        summary=session.summary,
+        started_at=session.started_at,
+        ended_at=session.ended_at,
+    )
+    return save_json(report, output_dir / f"{session.session_id}.json")
+
+
 def parse_or_load_pdf(config: AppConfig) -> tuple[ParsedDocument, str]:
     if config.pdf_path is None:
         raise ValueError("--pdf is required.")
@@ -101,28 +155,23 @@ def extract_or_load_concepts(
     cached = cache_path(
         config.cache_dir,
         file_hash,
-        f"concepts_{config.output_language}.json",
+        f"concepts_auto_{MAX_CONCEPTS}_{config.output_language}.json",
         title=parsed_doc.title,
     )
-    legacy_cached = legacy_cache_path(config.cache_dir, file_hash, f"concepts_{config.output_language}.json")
     if cached.exists() and not config.skip_cache:
-        return [Concept.model_validate(item) for item in load_json(cached)]
-    if legacy_cached.exists() and not config.skip_cache:
-        concepts = [Concept.model_validate(item) for item in load_json(legacy_cached)]
-        save_json(concepts, cached)
+        concepts = [Concept.model_validate(item) for item in load_json(cached)[:MAX_CONCEPTS]]
+        save_json(concepts, document_output_dir(config, parsed_doc) / f"concepts_{parsed_doc.document_id}.json")
         return concepts
 
     system_prompt, user_prompt = build_concept_extraction_prompt(
         markdown=markdown,
-        subject=config.subject,
         difficulty=config.difficulty,
-        max_concepts=config.max_concepts,
         output_language=config.output_language,
     )
     payload = llm_client.complete_json(system_prompt, user_prompt)
     raw_concepts = payload.get("concepts", [])
     concepts = []
-    for index, item in enumerate(raw_concepts[: config.max_concepts], start=1):
+    for index, item in enumerate(raw_concepts[:MAX_CONCEPTS], start=1):
         item = dict(item)
         item["concept_id"] = f"concept_{index:03d}"
         concepts.append(Concept.model_validate(item))
@@ -149,15 +198,12 @@ def generate_or_load_questions(
     cached = cache_path(
         config.cache_dir,
         file_hash,
-        f"questions_{config.output_language}_v3.json",
+        f"questions_{config.output_language}_v6_unified_points_q{QUESTIONS_PER_CONCEPT}.json",
         title=parsed_doc.title,
     )
-    legacy_cached = legacy_cache_path(config.cache_dir, file_hash, f"questions_{config.output_language}_v3.json")
     if cached.exists() and not config.skip_cache:
-        return [Question.model_validate(item) for item in load_json(cached)]
-    if legacy_cached.exists() and not config.skip_cache:
-        questions = [Question.model_validate(item) for item in load_json(legacy_cached)]
-        save_json(questions, cached)
+        questions = [Question.model_validate(item) for item in load_json(cached)]
+        save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
         return questions
 
     total = len(concepts)
@@ -168,7 +214,6 @@ def generate_or_load_questions(
         system_prompt, user_prompt = build_question_generation_prompt(
             concept=concept,
             document_excerpt=excerpt,
-            questions_per_concept=config.questions_per_concept,
             output_language=config.output_language,
         )
         try:
@@ -179,14 +224,14 @@ def generate_or_load_questions(
             ) from exc
         raw_questions = payload.get("questions", [])
         qs: list[Question] = []
-        for question_index, item in enumerate(raw_questions[: config.questions_per_concept], start=1):
+        for question_index, item in enumerate(raw_questions[:QUESTIONS_PER_CONCEPT], start=1):
             item = dict(item)
+            _assign_required_point_ids(item)
             item["concept_id"] = concept.concept_id
             item["question_id"] = f"q_{concept_index:03d}_{question_index:03d}"
             question = Question.model_validate(item)
-            if len(question.point_hints) != len(question.required_points):
-                raise ValueError("Generated question must link a gentle and direct hint to every required point.")
             qs.append(question)
+        _validate_question_mix(qs)
         return concept_index, qs
 
     # 최대 7개 스레드로 병렬 처리 (OpenAI API는 스레드 안전)
@@ -209,6 +254,27 @@ def generate_or_load_questions(
     save_json(questions, cached)
     save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
     return questions
+
+
+def _validate_question_mix(questions: list[Question]) -> None:
+    question_types = [question.question_type for question in questions]
+    if len(questions) != QUESTIONS_PER_CONCEPT or question_types[0] != "explanation" or question_types[1] not in {
+        "comparison",
+        "application",
+    }:
+        raise ValueError(
+            "Generated questions must contain one explanation question followed by one comparison or application question."
+        )
+
+
+def _assign_required_point_ids(question_data: dict) -> None:
+    """LLM 의미 출력과 무관한 point_id를 배열 순서에 따라 결정적으로 부여합니다."""
+    required_points = question_data.get("required_points")
+    if not isinstance(required_points, list):
+        return
+    for index, point in enumerate(required_points, start=1):
+        if isinstance(point, dict):
+            point["point_id"] = f"rp_{index:03d}"
 
 
 def _collect_question_results(

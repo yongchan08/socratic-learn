@@ -8,7 +8,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, 
 
 
 LLM_CONNECT_TIMEOUT_SECONDS = 10.0
-LLM_RESPONSE_TIMEOUT_SECONDS = 45.0
+LLM_RESPONSE_TIMEOUT_SECONDS = 70.0
 LLM_NETWORK_RETRIES = 1
 LLM_JSON_REPAIR_RETRIES = 1
 
@@ -58,15 +58,17 @@ class LLMClient:
 
         for attempt in range(json_repair_retries + 1):
             try:
-                response = self.client.chat.completions.create(
+                request_params = dict(
                     model=self.model,
-                    temperature=self.temperature,
                     response_format={"type": "json_object"},
                     messages=[
                         {"role": "system", "content": f"{system_prompt}\nReturn valid JSON only."},
                         {"role": "user", "content": current_user_prompt},
                     ],
                 )
+                if not self.model.startswith("gpt-5"):
+                    request_params["temperature"] = self.temperature
+                response = self.client.chat.completions.create(**request_params)
             except APITimeoutError as exc:
                 raise LLMRequestTimeoutError("LLM 응답 시간이 초과되었습니다.") from exc
             except RateLimitError as exc:
