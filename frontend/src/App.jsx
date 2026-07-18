@@ -1,4 +1,4 @@
-import { BookOpen, Check, FileUp, Flag, Landmark, Loader2, Lock, Plus, Search, Send, Settings, Scroll, Trash2 } from "lucide-react";
+import { BookOpen, Check, FileUp, Flag, Landmark, Loader2, Lock, Plus, Search, Send, Settings, ShieldCheck, Scroll, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -8,6 +8,15 @@ const MAX_ATTEMPTS_PER_QUESTION = 3;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const ACTIVE_SESSION_KEY = "socratic_tutor_active_session_id";
 const ACTIVE_COURSE_KEY = "socratic_tutor_active_course_id";
+const ADMIN_AUTH_KEY = "socratic_tutor_admin_authenticated";
+const BACKGROUND_VOLUME_KEY = "socratic_tutor_background_music_volume";
+const EFFECT_VOLUME_KEY = "socratic_tutor_effect_volume";
+const ADMIN_PASSWORD = "1004";
+
+function storedVolume(key, fallback) {
+  const value = Number(window.localStorage.getItem(key));
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
+}
 
 const initialForm = {
   difficulty: "normal",
@@ -247,6 +256,11 @@ function TopBar({ onAcademy, audioSettings }) {
 /* ── Main App ────────────────────────────────────────────────────────────── */
 
 export function App() {
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
+    () => window.sessionStorage.getItem(ADMIN_AUTH_KEY) === "true",
+  );
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminError, setAdminError] = useState("");
   const [file, setFile] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [state, setState] = useState(null);
@@ -259,13 +273,18 @@ export function App() {
   const [loadingSteps, setLoadingSteps] = useState([]);
   const [dismissedTransitionAnswerId, setDismissedTransitionAnswerId] = useState(null);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
-  const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.32);
-  const [questionSoundVolume, setQuestionSoundVolume] = useState(0.72);
+  const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(
+    () => storedVolume(BACKGROUND_VOLUME_KEY, 0.32),
+  );
+  const [questionSoundVolume, setQuestionSoundVolume] = useState(
+    () => storedVolume(EFFECT_VOLUME_KEY, 0.72),
+  );
   const backgroundMusicRef = useRef(null);
   const questionChangeSoundRef = useRef(null);
   const previousQuestionIdRef = useRef(null);
 
   useEffect(() => {
+    if (!isAdminAuthenticated) return;
     fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
     const existingCourseId = window.localStorage.getItem(ACTIVE_COURSE_KEY);
     fetch(`${API_BASE}/api/courses`)
@@ -290,7 +309,19 @@ export function App() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setBusy(false));
-  }, []);
+  }, [isAdminAuthenticated]);
+
+  function submitAdminPassword(event) {
+    event.preventDefault();
+    if (adminPassword !== ADMIN_PASSWORD) {
+      setAdminError("비밀번호가 올바르지 않습니다.");
+      return;
+    }
+    window.sessionStorage.setItem(ADMIN_AUTH_KEY, "true");
+    setIsAdminAuthenticated(true);
+    setAdminPassword("");
+    setAdminError("");
+  }
 
   async function createNewCourse() {
     const title = window.prompt("새 학습 로드맵의 이름을 입력하세요.", "새 학습 로드맵");
@@ -402,10 +433,12 @@ export function App() {
 
   useEffect(() => {
     if (backgroundMusicRef.current) backgroundMusicRef.current.volume = backgroundMusicVolume;
+    window.localStorage.setItem(BACKGROUND_VOLUME_KEY, String(backgroundMusicVolume));
   }, [backgroundMusicVolume]);
 
   useEffect(() => {
     if (questionChangeSoundRef.current) questionChangeSoundRef.current.volume = questionSoundVolume;
+    window.localStorage.setItem(EFFECT_VOLUME_KEY, String(questionSoundVolume));
   }, [questionSoundVolume]);
 
   useEffect(() => {
@@ -565,6 +598,47 @@ export function App() {
       onQuestionSoundVolumeChange={setQuestionSoundVolume}
     />
   );
+
+  if (!isAdminAuthenticated) {
+    return (
+      <div style={{ background: "#050504" }}>
+        <SvgDefs/>
+        <div className="app-bg library-bg admin-login-bg">
+          <div className="app-bg-overlay"/>
+          <div className="app-frame">
+            <TopBar audioSettings={audioSettings}/>
+            <main className="admin-login-shell">
+              <section className="admin-login-card" aria-labelledby="admin-login-title">
+                <ShieldCheck className="admin-login-icon" size={34}/>
+                <span className="admin-login-eyebrow">관리자 전용</span>
+                <h1 id="admin-login-title">학습 로드맵 관리</h1>
+                <p>로드맵을 생성하고 관리하려면 관리자 비밀번호를 입력하세요.</p>
+                <form onSubmit={submitAdminPassword}>
+                  <label htmlFor="admin-password">관리자 비밀번호</label>
+                  <input
+                    id="admin-password"
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="current-password"
+                    autoFocus
+                    value={adminPassword}
+                    onChange={(event) => {
+                      setAdminPassword(event.target.value);
+                      if (adminError) setAdminError("");
+                    }}
+                    aria-invalid={Boolean(adminError)}
+                    aria-describedby={adminError ? "admin-password-error" : undefined}
+                  />
+                  {adminError && <p id="admin-password-error" className="admin-login-error" role="alert">{adminError}</p>}
+                  <button type="submit" disabled={!adminPassword}>입장하기</button>
+                </form>
+              </section>
+            </main>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ── Start screen ────────────────────────────────────────────────────── */
 
@@ -998,7 +1072,16 @@ export function App() {
                       <>
                         <h2 className="srp-summary-title">학습 기록서</h2>
                         <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
+                        {state.session.completion_status === "ended_early" && (
+                          <p className="srp-muted">학습이 조기 종료되어 미응답 항목은 평가에서 제외되었습니다.</p>
+                        )}
                         <p className="srp-summary-text">{state.session.summary.overall_feedback}</p>
+                        {state.session.summary.unanswered_concepts?.length > 0 && (
+                          <div className="srp-summary-section">
+                            <h3>평가하지 않은 개념</h3>
+                            <ul>{state.session.summary.unanswered_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
+                          </div>
+                        )}
                         <div className="srp-summary-section">
                           <h3>강한 개념</h3>
                           {state.session.summary.strong_concepts.length
@@ -1013,6 +1096,14 @@ export function App() {
                                 <strong>{concept.title}</strong>
                                 {state.session.questions.filter((q) => q.concept_id === concept.concept_id).map((question) => {
                                   const result = state.session.answers.find((item) => item.question_id === question.question_id);
+                                  if (!result) {
+                                    return (
+                                      <div key={question.question_id} style={{ marginTop: 8 }}>
+                                        <p className="srp-muted">{question.question_type}</p>
+                                        <p className="srp-muted">평가하지 않음</p>
+                                      </div>
+                                    );
+                                  }
                                   return (
                                     <div key={question.question_id} style={{ marginTop: 8 }}>
                                       <p className="srp-muted">{question.question_type}</p>

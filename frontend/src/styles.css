@@ -74,8 +74,8 @@ h1, h2, h3, p { margin-top: 0; }
 /* ── TopBar (slt-*) ────────────────────────────── */
 
 .slt-topbar {
-  position: relative; isolation: isolate;
-  width: 100%; height: 56px; overflow: hidden;
+  position: relative; isolation: isolate; z-index: 100;
+  flex: 0 0 56px; width: 100%; height: 56px; overflow: visible;
   border-bottom: 1px solid #171006;
   background:
     radial-gradient(ellipse at 18% 50%, rgba(154,114,54,.035), transparent 34%),
@@ -804,9 +804,9 @@ h1, h2, h3, p { margin-top: 0; }
 
 /* ── Audio settings ────────────────────────────── */
 
-.audio-settings { position: relative; }
+.audio-settings { position: relative; z-index: 101; }
 .audio-settings-panel {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 102;
   min-width: 220px; padding: 14px 16px;
   background: linear-gradient(180deg, var(--ink-3), var(--ink-1));
   border: 1px solid rgba(143,111,59,.50); border-radius: 2px;
@@ -873,6 +873,39 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 /* ── Course roadmap ───────────────────────────── */
+
+.admin-login-shell {
+  flex: 1; min-height: 0; display: grid; place-items: center;
+  padding: 42px 24px;
+}
+.admin-login-card {
+  width: min(440px, 100%); padding: 42px 46px; text-align: center;
+  color: #2a1a0a; border: 2px solid #6d4b20; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(244,228,190,.98), rgba(207,177,119,.98));
+  box-shadow: inset 0 0 0 5px rgba(96,63,24,.16), 0 18px 48px rgba(0,0,0,.58);
+}
+.admin-login-icon { color: #79551f; margin-bottom: 10px; }
+.admin-login-eyebrow {
+  display: block; color: #8b642b; font-size: 12px; font-weight: 800;
+  letter-spacing: .16em;
+}
+.admin-login-card h1 { margin: 8px 0 10px; font-size: 30px; }
+.admin-login-card > p { margin: 0 0 28px; color: #62451f; line-height: 1.6; }
+.admin-login-card form { display: grid; gap: 10px; text-align: left; }
+.admin-login-card label { font-size: 13px; font-weight: 750; color: #503617; }
+.admin-login-card input {
+  width: 100%; box-sizing: border-box; padding: 13px 14px;
+  border: 1px solid #8a652f; border-radius: 4px; background: rgba(255,250,231,.72);
+  color: #241607; font: inherit; outline: none;
+}
+.admin-login-card input:focus { border-color: #4e3516; box-shadow: 0 0 0 3px rgba(117,82,34,.18); }
+.admin-login-card button {
+  margin-top: 6px; padding: 13px 16px; border: 1px solid #3c2811; border-radius: 4px;
+  background: linear-gradient(180deg, #76552a, #3f2a13); color: #f5e7c2;
+  font: inherit; font-weight: 780; cursor: pointer;
+}
+.admin-login-card button:disabled { cursor: not-allowed; opacity: .5; }
+.admin-login-error { margin: 0; color: #8c2525; font-size: 13px; font-weight: 700; }
 
 .roadmap-shell {
   flex: 1; min-height: 0; display: grid; place-items: center;

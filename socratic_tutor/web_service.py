@@ -21,6 +21,8 @@ from .storage import save_json
 from .session_store import PostgresSessionStore, StoredWebSession
 from .utils import truncate_markdown, utc_now
 
+END_COMMANDS = {"/quit", "/exit", "/done"}
+
 
 class WebStudyError(ValueError):
     pass
@@ -243,11 +245,18 @@ class WebStudyManager:
         answer_text = answer_text.strip()
         if not answer_text:
             raise WebStudyError("답변이 비어 있습니다.")
+        command = answer_text.lower()
+        if command in END_COMMANDS:
+            return self.finish(session_id, end_reason="user_quit")
+        if command == "/skip":
+            return self.skip(session_id)
+        if self.get_session(session_id).ended_at is not None:
+            raise WebStudyError("이미 종료된 학습 세션입니다.")
         if self._session_modes.get(session_id) == "concept_review":
             return self._answer_concept_review(session_id, answer_text)
         question = self.current_question(session_id)
         if question is None:
-            return self.finish(session_id)
+            return self.finish(session_id, end_reason="all_answered")
 
         session = self.get_session(session_id)
         attempt_number = self._attempt_number(session, question)
@@ -272,17 +281,19 @@ class WebStudyManager:
         if evaluation.next_action == "next_question" or attempt_number >= MAX_ATTEMPTS_PER_QUESTION:
             self._advance(session_id)
         if self.current_question(session_id) is None:
-            self.finish(session_id)
+            self.finish(session_id, end_reason="all_answered")
         else:
             self._persist(session_id)
         return session
 
     def skip(self, session_id: str) -> StudySession:
+        if self.get_session(session_id).ended_at is not None:
+            raise WebStudyError("이미 종료된 학습 세션입니다.")
         if self._session_modes.get(session_id) == "concept_review":
             return self._answer_concept_review(session_id, "/skip")
         question = self.current_question(session_id)
         if question is None:
-            return self.finish(session_id)
+            return self.finish(session_id, end_reason="all_answered")
         session = self.get_session(session_id)
         session.answers.append(
             StudentAnswer(
@@ -300,20 +311,23 @@ class WebStudyManager:
         )
         self._advance(session_id)
         if self.current_question(session_id) is None:
-            self.finish(session_id)
+            self.finish(session_id, end_reason="all_answered")
         else:
             self._persist(session_id)
         return session
 
-    def finish(self, session_id: str) -> StudySession:
+    def finish(self, session_id: str, end_reason: str = "user_quit") -> StudySession:
         session = self.get_session(session_id)
         if session.ended_at is None:
+            fully_completed = self._all_items_answered(session_id)
             config = self._configs[session_id]
             llm_client = self._llm_clients.get(session_id)
             if self._session_modes.get(session_id) == "concept_review" and llm_client is not None:
                 evaluate_concept_answers(session, llm_client)
             generate_session_summary(session, llm_client)
             session.ended_at = utc_now()
+            session.completion_status = "completed" if fully_completed else "ended_early"
+            session.end_reason = "all_answered" if fully_completed else end_reason
             if self._session_store is None:
                 if self._session_modes.get(session_id) == "concept_review":
                     save_concept_review_report(
@@ -329,8 +343,22 @@ class WebStudyManager:
                         ) / f"{session.session_id}.json",
                     )
             self._persist(session_id)
-            self._complete_course_stage(session_id)
+            if fully_completed:
+                self._complete_course_stage(session_id)
         return session
+
+    def _all_items_answered(self, session_id: str) -> bool:
+        session = self.get_session(session_id)
+        index = self._current_indexes.get(session_id, 0)
+        if self._session_modes.get(session_id) == "concept_review":
+            answered = {answer.concept_id for answer in session.concept_answers}
+            return index >= len(session.concepts) and all(
+                concept.concept_id in answered for concept in session.concepts
+            )
+        answered = {answer.question_id for answer in session.answers}
+        return index >= len(session.questions) and all(
+            question.question_id in answered for question in session.questions
+        )
 
     def snapshot(self, session_id: str) -> dict:
         session = self.get_session(session_id)
@@ -355,9 +383,11 @@ class WebStudyManager:
 
     def _answer_concept_review(self, session_id: str, answer_text: str) -> StudySession:
         session = self.get_session(session_id)
+        if session.ended_at is not None:
+            raise WebStudyError("이미 종료된 학습 세션입니다.")
         index = self._current_indexes.get(session_id, 0)
         if index >= len(session.concepts):
-            return self.finish(session_id)
+            return self.finish(session_id, end_reason="all_answered")
         concept = session.concepts[index]
         session.concept_answers.append(
             ConceptAnswer(
@@ -369,7 +399,7 @@ class WebStudyManager:
         )
         self._advance(session_id)
         if self._current_indexes[session_id] >= len(session.concepts):
-            self.finish(session_id)
+            self.finish(session_id, end_reason="all_answered")
         else:
             self._persist(session_id)
         return session

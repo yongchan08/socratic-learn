@@ -315,6 +315,10 @@ def build_session_summary_prompt(
     output_language: str = "ko",
 ) -> tuple[str, str]:
     language_name = _language_name(output_language)
+    answered_question_ids = {answer.question_id for answer in session.answers}
+    unanswered_questions = [
+        question.question for question in session.questions if question.question_id not in answered_question_ids
+    ]
     system_prompt = (
         "You are a learning coach.\n"
         "Summarize the student's learning session based on their answers and evaluations.\n"
@@ -322,6 +326,10 @@ def build_session_summary_prompt(
     )
     user_prompt = f"""Study session:
 {json.dumps(session.model_dump(mode="json"), ensure_ascii=False, indent=2)}
+
+Progress:
+- Answered questions: {len(answered_question_ids)} / {len(session.questions)}
+- Unanswered questions: {json.dumps(unanswered_questions, ensure_ascii=False)}
 
 Output language:
 {language_name}
@@ -341,6 +349,8 @@ Rules:
 - weak_concepts should be concepts where answers were insufficient or had misconceptions.
 - recommended_review_questions should be actionable.
 - overall_feedback should be supportive and specific.
+- Do not infer strengths or weaknesses from unanswered questions.
+- If questions are unanswered, state clearly that the session ended before all items were evaluated.
 - Write the session summary in Korean if output_language is "ko".
 - Write the session summary in English if output_language is "en".
 - Preserve technical terms in English when they are commonly used that way.

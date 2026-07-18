@@ -103,6 +103,8 @@ class SessionSummary(BaseModel):
     weak_concepts: list[str] = Field(default_factory=list)
     frequently_missing_points: list[str] = Field(default_factory=list)
     recommended_review_questions: list[str] = Field(default_factory=list)
+    unanswered_concepts: list[str] = Field(default_factory=list)
+    completion_rate: float = 0.0
     overall_feedback: str
 
 
@@ -118,6 +120,8 @@ class StudySession(BaseModel):
     summary: SessionSummary | None = None
     started_at: datetime
     ended_at: datetime | None = None
+    completion_status: Literal["completed", "ended_early"] | None = None
+    end_reason: Literal["all_answered", "user_quit"] | None = None
 
 
 class ConceptReviewReport(BaseModel):
