@@ -998,7 +998,16 @@ export function App() {
                       <>
                         <h2 className="srp-summary-title">학습 기록서</h2>
                         <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
+                        {state.session.completion_status === "ended_early" && (
+                          <p className="srp-muted">학습이 조기 종료되어 미응답 항목은 평가에서 제외되었습니다.</p>
+                        )}
                         <p className="srp-summary-text">{state.session.summary.overall_feedback}</p>
+                        {state.session.summary.unanswered_concepts?.length > 0 && (
+                          <div className="srp-summary-section">
+                            <h3>평가하지 않은 개념</h3>
+                            <ul>{state.session.summary.unanswered_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
+                          </div>
+                        )}
                         <div className="srp-summary-section">
                           <h3>강한 개념</h3>
                           {state.session.summary.strong_concepts.length
@@ -1013,6 +1022,14 @@ export function App() {
                                 <strong>{concept.title}</strong>
                                 {state.session.questions.filter((q) => q.concept_id === concept.concept_id).map((question) => {
                                   const result = state.session.answers.find((item) => item.question_id === question.question_id);
+                                  if (!result) {
+                                    return (
+                                      <div key={question.question_id} style={{ marginTop: 8 }}>
+                                        <p className="srp-muted">{question.question_type}</p>
+                                        <p className="srp-muted">평가하지 않음</p>
+                                      </div>
+                                    );
+                                  }
                                   return (
                                     <div key={question.question_id} style={{ marginTop: 8 }}>
                                       <p className="srp-muted">{question.question_type}</p>

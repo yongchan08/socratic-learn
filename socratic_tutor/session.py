@@ -199,6 +199,7 @@ def _skipped_answer(question: Question, attempt_number: int) -> StudentAnswer:
 
 
 def generate_session_summary(session: StudySession, llm_client: object | None = None) -> SessionSummary:
+    progress = _session_progress(session)
     if llm_client is not None and session.answers:
         system_prompt, user_prompt = build_session_summary_prompt(
             session,
@@ -207,6 +208,8 @@ def generate_session_summary(session: StudySession, llm_client: object | None = 
         try:
             payload = llm_client.complete_json(system_prompt, user_prompt)
             summary = SessionSummary.model_validate(payload)
+            summary.unanswered_concepts = progress["unanswered_concepts"]
+            summary.completion_rate = progress["completion_rate"]
             session.summary = summary
             return summary
         except (ValidationError, RuntimeError, ValueError):
@@ -217,7 +220,22 @@ def generate_session_summary(session: StudySession, llm_client: object | None = 
     return summary
 
 
+def _session_progress(session: StudySession) -> dict:
+    answered_question_ids = {answer.question_id for answer in session.answers}
+    answered_concept_ids = {
+        question.concept_id for question in session.questions if question.question_id in answered_question_ids
+    }
+    answered_concept_ids.update(answer.concept_id for answer in session.concept_answers)
+    total = len(session.concepts)
+    unanswered = [concept.title for concept in session.concepts if concept.concept_id not in answered_concept_ids]
+    return {
+        "completion_rate": (total - len(unanswered)) / total if total else 1.0,
+        "unanswered_concepts": unanswered,
+    }
+
+
 def _fallback_summary(session: StudySession) -> SessionSummary:
+    progress = _session_progress(session)
     questions_by_id = {question.question_id: question for question in session.questions}
     concepts_by_id = {concept.concept_id: concept for concept in session.concepts}
     scores: dict[str, list[float]] = defaultdict(list)
@@ -257,5 +275,7 @@ def _fallback_summary(session: StudySession) -> SessionSummary:
         weak_concepts=weak,
         frequently_missing_points=frequent_missing,
         recommended_review_questions=review_questions,
+        unanswered_concepts=progress["unanswered_concepts"],
+        completion_rate=progress["completion_rate"],
         overall_feedback="현재 답변 기록을 기준으로 생성한 로컬 요약입니다.",
     )

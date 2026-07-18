@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from socratic_tutor.config import AppConfig
-from socratic_tutor.models import Concept, Question, RequiredPoint, StudySession
+from socratic_tutor.models import AnswerEvaluation, Concept, Question, RequiredPoint, StudentAnswer, StudySession
 from socratic_tutor.session_store import StoredWebSession
 from socratic_tutor.web_service import WebStudyManager
 
@@ -104,7 +104,7 @@ def test_get_session_restores_missing_in_memory_session(monkeypatch):
     assert manager._configs[session.session_id].api_key == "restored-key"
 
 
-def test_course_unlocks_stages_in_order_and_marks_finished_stage_complete(monkeypatch):
+def test_course_does_not_complete_stage_when_session_ends_early(monkeypatch):
     store = FakeStore()
     manager = WebStudyManager(session_store=store)
     course = manager.create_course()
@@ -122,8 +122,87 @@ def test_course_unlocks_stages_in_order_and_marks_finished_stage_complete(monkey
     manager.finish(session.session_id)
 
     saved_course = manager.get_course(course["course_id"])
-    assert saved_course["stages"][0]["completed"] is True
+    assert saved_course["stages"][0]["completed"] is False
     assert saved_course["stages"][0]["document_title"] == "첫 강의"
+    assert session.completion_status == "ended_early"
+    assert session.end_reason == "user_quit"
+
+
+def test_course_completes_stage_after_all_questions_are_resolved(monkeypatch):
+    store = FakeStore()
+    manager = WebStudyManager(session_store=store)
+    course = manager.create_course()
+    session = _session()
+    session.answers.append(StudentAnswer(
+        answer_id="ans_001",
+        question_id="q_001_001",
+        attempt_number=1,
+        answer_text="/skip",
+        evaluation=AnswerEvaluation(
+            score=0, status="insufficient", feedback_to_student="건너뜀", next_action="next_question"
+        ),
+        created_at=datetime.now(timezone.utc),
+    ))
+    manager._sessions[session.session_id] = session
+    manager._configs[session.session_id] = AppConfig(api_key="test-key")
+    manager._llm_clients[session.session_id] = None
+    manager._current_indexes[session.session_id] = 1
+    manager._session_modes[session.session_id] = "study"
+    manager._document_titles[session.session_id] = "첫 강의"
+    manager._course_links[session.session_id] = (course["course_id"], 1)
+    manager._attach_course_session(course["course_id"], 1, session.session_id, "첫 강의")
+    monkeypatch.setattr("socratic_tutor.web_service.generate_session_summary", lambda session, client: None)
+
+    manager.finish(session.session_id, end_reason="all_answered")
+
+    assert manager.get_course(course["course_id"])["stages"][0]["completed"] is True
+    assert session.completion_status == "completed"
+    assert session.end_reason == "all_answered"
+
+
+def test_typed_quit_finishes_without_evaluating_or_storing_answer(monkeypatch):
+    manager = WebStudyManager(session_store=FakeStore())
+    session = _session()
+    manager._sessions[session.session_id] = session
+    manager._configs[session.session_id] = AppConfig(api_key="test-key")
+    manager._llm_clients[session.session_id] = object()
+    manager._current_indexes[session.session_id] = 0
+    manager._session_modes[session.session_id] = "study"
+    manager._document_titles[session.session_id] = "강의"
+    monkeypatch.setattr("socratic_tutor.web_service.generate_session_summary", lambda session, client: None)
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.evaluate_answer",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("LLM evaluation must not run")),
+    )
+
+    manager.answer(session.session_id, "  /QUIT  ")
+
+    assert session.answers == []
+    assert session.completion_status == "ended_early"
+    assert session.end_reason == "user_quit"
+
+
+def test_typed_skip_uses_fixed_skip_evaluation_without_llm(monkeypatch):
+    manager = WebStudyManager(session_store=FakeStore())
+    session = _session()
+    manager._sessions[session.session_id] = session
+    manager._configs[session.session_id] = AppConfig(api_key="test-key")
+    manager._llm_clients[session.session_id] = object()
+    manager._current_indexes[session.session_id] = 0
+    manager._session_modes[session.session_id] = "study"
+    manager._document_titles[session.session_id] = "강의"
+    monkeypatch.setattr("socratic_tutor.web_service.generate_session_summary", lambda session, client: None)
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.evaluate_answer",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("LLM evaluation must not run")),
+    )
+
+    manager.answer(session.session_id, " /SKIP ")
+
+    assert len(session.answers) == 1
+    assert session.answers[0].answer_text == "/skip"
+    assert session.answers[0].evaluation.missing_points == ["데이터 임시 저장"]
+    assert session.completion_status == "completed"
 
 
 def test_course_review_namespaces_concepts_and_questions(monkeypatch):
