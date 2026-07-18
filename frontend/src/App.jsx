@@ -1,4 +1,4 @@
-import { BookOpen, FileUp, Landmark, Loader2, Search, Send, Settings, Scroll } from "lucide-react";
+import { BookOpen, Check, FileUp, Flag, Landmark, Loader2, Lock, Plus, Search, Send, Settings, Scroll, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -6,6 +6,8 @@ const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
 const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
 const MAX_ATTEMPTS_PER_QUESTION = 3;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const ACTIVE_SESSION_KEY = "socratic_tutor_active_session_id";
+const ACTIVE_COURSE_KEY = "socratic_tutor_active_course_id";
 
 const initialForm = {
   difficulty: "normal",
@@ -248,6 +250,9 @@ export function App() {
   const [file, setFile] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [state, setState] = useState(null);
+  const [course, setCourse] = useState(null);
+  const [courses, setCourses] = useState([]);
+  const [selectedStage, setSelectedStage] = useState(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -262,7 +267,90 @@ export function App() {
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
+    const existingCourseId = window.localStorage.getItem(ACTIVE_COURSE_KEY);
+    fetch(`${API_BASE}/api/courses`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.detail || "학습 로드맵 목록을 불러오지 못했습니다.");
+        setCourses(payload);
+      })
+      .catch((err) => setError(err.message));
+    const sessionId = window.localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!sessionId) return;
+    setBusy(true);
+    Promise.all([
+      fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }),
+      existingCourseId ? fetch(`${API_BASE}/api/courses/${encodeURIComponent(existingCourseId)}`) : null,
+    ])
+      .then(async ([sessionResponse, courseResponse]) => {
+        const sessionPayload = await sessionResponse.json().catch(() => ({}));
+        if (!sessionResponse.ok) throw new Error(sessionPayload.detail || "이전 학습 세션을 불러오지 못했습니다.");
+        if (courseResponse?.ok) setCourse(await courseResponse.json());
+        setState(sessionPayload);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBusy(false));
   }, []);
+
+  async function createNewCourse() {
+    const title = window.prompt("새 학습 로드맵의 이름을 입력하세요.", "새 학습 로드맵");
+    if (title === null) return;
+    setBusy(true); setError("");
+    try {
+      const nextCourse = await request("/api/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim() || "새 학습 로드맵" }),
+      });
+      setCourses((current) => [nextCourse, ...current]);
+      window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
+      setCourse(nextCourse);
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  function openCourse(nextCourse) {
+    window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
+    setCourse(nextCourse);
+    setSelectedStage(null);
+    setError("");
+  }
+
+  async function deleteCourse(event, courseId) {
+    event.stopPropagation();
+    if (!window.confirm("이 로드맵과 연결된 학습 기록을 삭제할까요?")) return;
+    setBusy(true); setError("");
+    try {
+      await request(`/api/courses/${encodeURIComponent(courseId)}`, { method: "DELETE" });
+      setCourses((current) => current.filter((item) => item.course_id !== courseId));
+      if (window.localStorage.getItem(ACTIVE_COURSE_KEY) === courseId) {
+        window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+      }
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  function returnToLibrary() {
+    window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setCourse(null); setState(null); setSelectedStage(null); setAnswer(""); setError("");
+  }
+
+  async function refreshCourse() {
+    const courseId = course?.course_id ?? window.localStorage.getItem(ACTIVE_COURSE_KEY);
+    if (!courseId) return;
+    const nextCourse = await request(`/api/courses/${encodeURIComponent(courseId)}`);
+    setCourse(nextCourse);
+    setCourses((current) => current.map((item) => item.course_id === nextCourse.course_id ? nextCourse : item));
+  }
+
+  async function returnToRoadmap() {
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setState(null);
+    setSelectedStage(null);
+    setAnswer("");
+    try { await refreshCourse(); } catch (err) { setError(err.message); }
+  }
 
   const concepts = state?.session?.concepts ?? [];
   const isConceptReview = state?.session_mode === "concept_review";
@@ -342,6 +430,11 @@ export function App() {
     payload.append("difficulty", form.difficulty);
     payload.append("output_language", form.outputLanguage);
     payload.append("session_mode", form.sessionMode);
+    if (course?.course_id && selectedStage) {
+      payload.set("session_mode", "study");
+      payload.append("course_id", course.course_id);
+      payload.append("stage_index", String(selectedStage.stage_index));
+    }
     if (form.model) payload.append("model", form.model);
 
     const addStep = (label) => {
@@ -397,6 +490,7 @@ export function App() {
             setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
             setDismissedTransitionAnswerId(null);
             setState(evt.payload);
+            window.localStorage.setItem(ACTIVE_SESSION_KEY, evt.payload.session.session_id);
             setAnswer("");
           } else if (evt.step === "error") {
             throw new Error(evt.message);
@@ -408,6 +502,20 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function startFinalReview() {
+    if (!course) return;
+    setBusy(true); setError("");
+    try {
+      const next = course.final_review_session_id
+        ? await request(`/api/sessions/${encodeURIComponent(course.final_review_session_id)}`)
+        : await request(`/api/courses/${encodeURIComponent(course.course_id)}/final-review`, { method: "POST" });
+      window.localStorage.setItem(ACTIVE_SESSION_KEY, next.session.session_id);
+      setState(next);
+      setAnswer("");
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
   }
 
   function selectPdf(event) {
@@ -460,6 +568,116 @@ export function App() {
 
   /* ── Start screen ────────────────────────────────────────────────────── */
 
+  if (!state && !course) {
+    return (
+      <div style={{ background: "#050504" }}>
+        <SvgDefs/>
+        <div className="app-bg library-bg">
+          <div className="app-bg-overlay"/>
+          <div className="app-frame">
+            <TopBar audioSettings={audioSettings}/>
+            <main className="library-shell">
+              <header className="library-heading">
+                <div><span>학당 서고</span><h1>나의 학습 로드맵</h1></div>
+                <p>강의 묶음을 만들고 단계별 소크라테스 학습을 이어가세요.</p>
+              </header>
+              {error && <div className="roadmap-error library-error">{error}</div>}
+              <section className="course-grid" aria-label="학습 로드맵 목록">
+                <button type="button" className="course-card course-card-new" onClick={createNewCourse} disabled={busy}>
+                  <span className="course-new-icon">{busy ? <Loader2 className="spin"/> : <Plus/>}</span>
+                  <strong>새 로드맵 만들기</strong>
+                  <small>3개의 강의 PDF로 학습 여정을 시작하세요.</small>
+                </button>
+                {courses.map((item, index) => {
+                  const completed = item.stages.filter((stage) => stage.completed).length;
+                  const documents = item.stages.filter((stage) => stage.document_title).length;
+                  const date = new Date(item.updated_at ?? item.created_at).toLocaleDateString("ko-KR");
+                  return (
+                    <article className={`course-card course-card-existing tone-${index % 4}`} key={item.course_id} onClick={() => openCourse(item)}>
+                      <div className="course-card-top">
+                        <span className="course-card-emblem">{["📜", "🏛️", "🦉", "⚡"][index % 4]}</span>
+                        <button type="button" aria-label="로드맵 삭제" onClick={(event) => deleteCourse(event, item.course_id)}><Trash2/></button>
+                      </div>
+                      <h2>{item.title}</h2>
+                      <p>{date} · PDF {documents}개</p>
+                      <div className="course-card-progress"><span style={{ width: `${(completed / 3) * 100}%` }}/></div>
+                      <small>{completed}/3 단계 완료</small>
+                    </article>
+                  );
+                })}
+              </section>
+            </main>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!state && !selectedStage) {
+    const allStagesComplete = course?.stages?.every((stage) => stage.completed) ?? false;
+    return (
+      <div style={{ background: "#050504" }}>
+        <SvgDefs/>
+        <div className="app-bg roadmap-bg">
+          <div className="app-bg-overlay"/>
+          <div className="app-frame">
+            <TopBar onAcademy={returnToLibrary} audioSettings={audioSettings}/>
+            <main className="roadmap-shell">
+              <section className="roadmap-scroll">
+                <header className="roadmap-heading">
+                  <span>✦</span><h1>학습 로드맵</h1><span>✦</span>
+                  <p>각 단계의 강의 PDF를 학습하고 마지막 개념 리포트에 도전하세요.</p>
+                </header>
+                {error && <div className="roadmap-error">{error}</div>}
+                <div className="roadmap-track">
+                  {(course?.stages ?? []).map((stage, index) => {
+                    const unlocked = index === 0 || course.stages[index - 1].completed;
+                    const active = unlocked && !stage.completed;
+                    return (
+                      <div className="roadmap-node-wrap" key={stage.stage_index}>
+                        <button
+                          type="button"
+                          className={`roadmap-node ${stage.completed ? "is-complete" : active ? "is-active" : "is-locked"}`}
+                          disabled={!unlocked || busy}
+                          onClick={() => stage.session_id
+                            ? request(`/api/sessions/${stage.session_id}`).then((next) => {
+                                window.localStorage.setItem(ACTIVE_SESSION_KEY, stage.session_id);
+                                setState(next);
+                              }).catch((err) => setError(err.message))
+                            : setSelectedStage(stage)}
+                        >
+                          {stage.completed ? <Check/> : unlocked ? <BookOpen/> : <Lock/>}
+                        </button>
+                        <strong>{stage.stage_index}단계</strong>
+                        <span>{stage.document_title ?? "강의 PDF 등록"}</span>
+                      </div>
+                    );
+                  })}
+                  <div className="roadmap-node-wrap roadmap-final-wrap">
+                    <button
+                      type="button"
+                      className={`roadmap-node roadmap-final ${allStagesComplete ? "is-active" : "is-locked"}`}
+                      disabled={!allStagesComplete || busy}
+                      onClick={startFinalReview}
+                    >
+                      {busy ? <Loader2 className="spin"/> : allStagesComplete ? <Flag/> : <Lock/>}
+                    </button>
+                    <strong>최종 단계</strong>
+                    <span>개념 리포트</span>
+                  </div>
+                </div>
+                <div className="roadmap-guide">
+                  <Landmark size={22}/>
+                  <p>앞 단계를 완료하면 다음 강의가 열립니다. 완료한 단계는 다시 확인할 수 있습니다.</p>
+                </div>
+              </section>
+            </main>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!state) {
     return (
       <div style={{ background: "#050504" }}>
@@ -477,7 +695,7 @@ export function App() {
               <section className="slp-panel slp-panel--upload" aria-label="학습 시작">
                 <SlpCorners/>
                 <div className="slp-upload-scroll-area" style={{ position: "relative", zIndex: 5 }}>
-                  <div className="parch-stage-ribbon">1단계: 입문</div>
+                  <div className="parch-stage-ribbon">{selectedStage?.stage_index ?? 1}단계: 강의 등록</div>
                   <p className="parch-upload-title">지식의 두루마리를 제출하세요</p>
                   <p className="parch-upload-desc">
                     공부할 강의 PDF를 제출하면 소크라테스가 두루마리를 해석하여 핵심 개념을 찾아냅니다.
@@ -500,12 +718,6 @@ export function App() {
                           onClick={() => setForm({ ...form, difficulty: v })}
                         >{v}</button>
                       ))}
-                    </div>
-                    <div className="parch-segmented" aria-label="학습 방식">
-                      <button type="button" className={form.sessionMode === "study" ? "active" : ""}
-                        onClick={() => setForm({ ...form, sessionMode: "study" })}>질문 학습</button>
-                      <button type="button" className={form.sessionMode === "concept_review" ? "active" : ""}
-                        onClick={() => setForm({ ...form, sessionMode: "concept_review" })}>개념 리포트</button>
                     </div>
                     <div className="parch-setting-strip" aria-label="학습 설정 요약">
                       <span>개념 추출</span>
@@ -614,7 +826,7 @@ export function App() {
         <div className="app-bg-overlay"/>
         <div className="app-frame">
           <TopBar
-            onAcademy={() => { setState(null); setAnswer(""); }}
+            onAcademy={returnToRoadmap}
             audioSettings={audioSettings}
           />
 
@@ -667,18 +879,18 @@ export function App() {
                     <span className="slp-progress-fill" style={{ width: `${progress}%` }}/>
                   </div>
                   <dl className="slp-stats">
-                    <div className="slp-stat-row"><dt>답변 기록</dt><dd>{answers.length}</dd></div>
                     <div className="slp-stat-row">
-                      <dt>현재 점수</dt>
-                      <dd>{lastAnswer?.evaluation ? `${Math.round(lastAnswer.evaluation.score * 100)}점` : "-"}</dd>
+                      <dt>질문 수</dt>
+                      <dd>{state.total_questions}</dd>
                     </div>
+                    <div className="slp-stat-row"><dt>응답 수</dt><dd>{answers.length}</dd></div>
                   </dl>
                 </section>
               </div>
             </div>
 
             {/* ── Center column ── */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 0 }}>
+            <div className="study-main">
               <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
                 <div className="ssb-component">
                   <div className="ssb-speech">
@@ -824,21 +1036,6 @@ export function App() {
                   </div>
                 </section>
 
-                {/* Records card */}
-                <section className="srp-card srp-card--records" aria-labelledby="record-card-title">
-                  <SrpCorners/>
-                  <div className="srp-card-content">
-                    <header className="srp-record-header">
-                      <h2 className="srp-record-title" id="record-card-title">학습 기록서 <span>(이번 세션)</span></h2>
-                    </header>
-                    <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true" style={{ height: 10, margin: "4px 0" }}><use href="#srpDivider"/></svg>
-                    <dl className="srp-stats">
-                      <div className="srp-stat-row"><dt>통과한 관문</dt><dd>{Math.min(state.current_index, state.total_questions)}</dd></div>
-                      <div className="srp-stat-row"><dt>총 질문 수</dt><dd>{state.total_questions}</dd></div>
-                      <div className="srp-stat-row"><dt>응답 수</dt><dd>{answers.length}</dd></div>
-                    </dl>
-                  </div>
-                </section>
               </div>
             </div>
           </div>

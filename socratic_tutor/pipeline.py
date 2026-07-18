@@ -88,7 +88,18 @@ def run_concept_review_pipeline(config: AppConfig) -> StudySession:
 def load_generated_learning_materials(
     parsed_doc: ParsedDocument,
     config: AppConfig,
+    file_hash: str | None = None,
+    material_store: object | None = None,
 ) -> tuple[list[Concept], list[Question]]:
+    if material_store is not None and file_hash is not None:
+        concepts = material_store.load_concepts(file_hash, config.difficulty, config.output_language)
+        questions = material_store.load_questions(file_hash, config.difficulty, config.output_language)
+        if concepts is None or questions is None:
+            raise FileNotFoundError(
+                "개념 리포트에 필요한 기존 학습 자료가 데이터베이스에 없습니다. "
+                "먼저 같은 PDF와 설정으로 질문 학습을 실행해 개념과 질문을 생성하세요."
+            )
+        return concepts, questions
     output_dir = document_output_dir(config, parsed_doc)
     concepts_path = output_dir / f"concepts_{parsed_doc.document_id}.json"
     questions_path = output_dir / f"questions_{parsed_doc.document_id}.json"
@@ -123,10 +134,17 @@ def save_concept_review_report(
     return save_json(report, output_dir / f"{session.session_id}.json")
 
 
-def parse_or_load_pdf(config: AppConfig) -> tuple[ParsedDocument, str]:
+def parse_or_load_pdf(config: AppConfig, material_store: object | None = None) -> tuple[ParsedDocument, str]:
     if config.pdf_path is None:
         raise ValueError("--pdf is required.")
     file_hash = compute_file_hash(config.pdf_path)
+    if material_store is not None:
+        doc = None if config.skip_cache else material_store.load_document(file_hash)
+        if doc is None:
+            console.print("PDF 파싱 중...")
+            doc = parse_pdf_to_markdown(str(config.pdf_path))
+            material_store.save_document(file_hash, doc)
+        return doc, file_hash
     cached = cache_path(config.cache_dir, file_hash, "parsed.json", source_path=config.pdf_path)
     legacy_cached = legacy_cache_path(config.cache_dir, file_hash, "parsed.json")
     if cached.exists() and not config.skip_cache:
@@ -151,14 +169,19 @@ def extract_or_load_concepts(
     file_hash: str,
     config: AppConfig,
     llm_client: object,
+    material_store: object | None = None,
 ) -> list[Concept]:
+    if material_store is not None and not config.skip_cache:
+        stored = material_store.load_concepts(file_hash, config.difficulty, config.output_language)
+        if stored is not None:
+            return stored[:MAX_CONCEPTS]
     cached = cache_path(
         config.cache_dir,
         file_hash,
         f"concepts_auto_{MAX_CONCEPTS}_{config.output_language}.json",
         title=parsed_doc.title,
     )
-    if cached.exists() and not config.skip_cache:
+    if material_store is None and cached.exists() and not config.skip_cache:
         concepts = [Concept.model_validate(item) for item in load_json(cached)[:MAX_CONCEPTS]]
         save_json(concepts, document_output_dir(config, parsed_doc) / f"concepts_{parsed_doc.document_id}.json")
         return concepts
@@ -176,8 +199,11 @@ def extract_or_load_concepts(
         item["concept_id"] = f"concept_{index:03d}"
         concepts.append(Concept.model_validate(item))
 
-    save_json(concepts, cached)
-    save_json(concepts, document_output_dir(config, parsed_doc) / f"concepts_{parsed_doc.document_id}.json")
+    if material_store is not None:
+        material_store.save_concepts(file_hash, config.difficulty, config.output_language, concepts)
+    else:
+        save_json(concepts, cached)
+        save_json(concepts, document_output_dir(config, parsed_doc) / f"concepts_{parsed_doc.document_id}.json")
     return concepts
 
 
@@ -189,6 +215,7 @@ def generate_or_load_questions(
     config: AppConfig,
     llm_client: object,
     on_progress: object | None = None,
+    material_store: object | None = None,
 ) -> list[Question]:
     """개념별 질문을 생성합니다. 캐시가 없으면 ThreadPoolExecutor로 병렬 생성합니다.
 
@@ -201,7 +228,11 @@ def generate_or_load_questions(
         f"questions_{config.output_language}_v6_unified_points_q{QUESTIONS_PER_CONCEPT}.json",
         title=parsed_doc.title,
     )
-    if cached.exists() and not config.skip_cache:
+    if material_store is not None and not config.skip_cache:
+        stored = material_store.load_questions(file_hash, config.difficulty, config.output_language)
+        if stored is not None:
+            return stored
+    if material_store is None and cached.exists() and not config.skip_cache:
         questions = [Question.model_validate(item) for item in load_json(cached)]
         save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
         return questions
@@ -251,8 +282,11 @@ def generate_or_load_questions(
     for i in sorted(results):
         questions.extend(results[i])
 
-    save_json(questions, cached)
-    save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
+    if material_store is not None:
+        material_store.save_questions(file_hash, config.difficulty, config.output_language, questions)
+    else:
+        save_json(questions, cached)
+        save_json(questions, document_output_dir(config, parsed_doc) / f"questions_{parsed_doc.document_id}.json")
     return questions
 
 

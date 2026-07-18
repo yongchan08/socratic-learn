@@ -192,7 +192,7 @@ Output language:
 Return JSON in this exact shape:
 
 {{
-  "matched_points": ["string"],
+  "matched_point_ids": ["rp_001"],
   "missing_points": ["string"],
   "misconceptions": ["string"],
   "score": 0.0,
@@ -218,6 +218,8 @@ Next action rules:
 - misconception -> ask_followup on attempts 1-2, next_question on attempt 3 or higher
 
 Semantic grading rules:
+- Return the point_id of every semantically satisfied required point in matched_point_ids.
+- matched_point_ids must contain only point_id values present in Required points. Do not rewrite IDs or invent IDs.
 - Evaluate semantic meaning, not exact wording.
 - Grade generously: when the answer reasonably implies a required point, count it as matched even if it is brief or informal.
 - If the student expresses a required point in simpler, shorter, or slightly different words, count it as matched.
@@ -233,15 +235,15 @@ Semantic grading rules:
 - Do not mark an answer sufficient if any required_point is missing.
 - For short-answer CLI learning, concise answers should be accepted if they contain the required meaning.
 - Do not reverse matched and missing points across attempts.
-- If the student improves their answer by adding a previously missing required point, that point must move from missing_points to matched_points.
+- If the student improves their answer by adding a previously missing required point, its ID must be added to matched_point_ids and the point must be removed from missing_points.
 - missing_points must include only unmet required_points.
 - Do not use optional_points or common_missing_points to decide score, status, or next_action.
-- Treat score as advisory only; decide status and next_action from misconceptions, matched_points, missing_points, and attempt_number.
+- Treat score as advisory only; decide status and next_action from misconceptions, matched_point_ids, missing_points, and attempt_number.
 
 Semantic grading example:
 - Required point: "오랜만에 사용해도 쉽게 기억나는 것"
 - Student answer: "오랜만에 사용해도 시스템이 쉽게 기억나고 학습 부담이 적다"
-- Correct evaluation: matched_points includes "오랜만에 사용해도 쉽게 기억나는 것"
+- Correct evaluation: matched_point_ids includes the point_id linked to "오랜만에 사용해도 쉽게 기억나는 것"
 - Incorrect evaluation: missing_points includes "오랜만에 사용해도 쉽게 기억나는 것"
 
 Attempt policy:
@@ -263,7 +265,7 @@ Feedback rules:
 - feedback_to_student must not provide a long complete answer.
 - Use required_points as the only grading criteria.
 - Do not use optional_points or common_missing_points to decide score, status, or next_action.
-- matched_points must include only satisfied required_points.
+- matched_point_ids must include only the IDs of satisfied required_points.
 - missing_points must include only unmet required_points.
 - If all required_points are satisfied and there are no misconceptions, missing_points must be empty, status must be sufficient, and next_action must be next_question.
 - If any required_point is missing, do not set status to sufficient.
@@ -300,7 +302,7 @@ Language rules:
 - Do not penalize the student for answering in Korean when the lecture material or question concepts are originally in English.
 - Return all user-facing feedback in Korean if output_language is "ko".
 - Return all user-facing feedback in English if output_language is "en".
-- User-facing evaluation fields are matched_points, missing_points, misconceptions, feedback_to_student, hint, improvement_note, and socratic_follow_up.
+- User-facing evaluation fields are missing_points, misconceptions, feedback_to_student, hint, improvement_note, and socratic_follow_up. matched_point_ids is a grading field and is converted to matched_points by the server.
 - Technical terms such as LLM, multimodality, attention, embedding, overfitting may remain in English if that is more natural, but explanations should be in the output language.
 - Keep enum values in English: status and next_action must use the allowed English enum values.
 - Return JSON only.
