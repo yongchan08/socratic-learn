@@ -60,6 +60,7 @@ class Question(BaseModel):
 
 
 class AnswerEvaluation(BaseModel):
+    matched_point_ids: list[str] = Field(default_factory=list)
     matched_points: list[str] = Field(default_factory=list)
     missing_points: list[str] = Field(default_factory=list)
     misconceptions: list[str] = Field(default_factory=list)

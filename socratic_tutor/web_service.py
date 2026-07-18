@@ -18,6 +18,7 @@ from .pipeline import (
 )
 from .session import evaluate_concept_answers, generate_session_summary
 from .storage import save_json
+from .session_store import PostgresSessionStore, StoredWebSession
 from .utils import truncate_markdown, utc_now
 
 
@@ -26,7 +27,7 @@ class WebStudyError(ValueError):
 
 
 class WebStudyManager:
-    def __init__(self) -> None:
+    def __init__(self, session_store=None) -> None:
         self._sessions: dict[str, StudySession] = {}
         self._configs: dict[str, AppConfig] = {}
         self._llm_clients: dict[str, LLMClient] = {}
@@ -34,6 +35,7 @@ class WebStudyManager:
         self._session_modes: dict[str, str] = {}
         self._document_titles: dict[str, str | None] = {}
         self._lock = Lock()
+        self._session_store = session_store if session_store is not None else PostgresSessionStore.from_environment()
 
     def create_session(
         self,
@@ -70,19 +72,24 @@ class WebStudyManager:
         _cb = on_progress or {}
 
         llm_client = LLMClient(model=config.model, api_key=config.api_key)
-        parsed_doc, file_hash = parse_or_load_pdf(config)
+        material_store = self._session_store
+        parsed_doc, file_hash = parse_or_load_pdf(config, material_store=material_store)
 
         if cb := _cb.get("after_parse"):
             cb()
 
         if session_mode == "concept_review":
             try:
-                concepts, questions = load_generated_learning_materials(parsed_doc, config)
+                concepts, questions = load_generated_learning_materials(
+                    parsed_doc, config, file_hash=file_hash, material_store=material_store
+                )
             except FileNotFoundError as exc:
                 raise WebStudyError(str(exc)) from exc
         else:
             markdown_for_llm, _ = truncate_markdown(parsed_doc.markdown)
-            concepts = extract_or_load_concepts(parsed_doc, markdown_for_llm, file_hash, config, llm_client)
+            concepts = extract_or_load_concepts(
+                parsed_doc, markdown_for_llm, file_hash, config, llm_client, material_store=material_store
+            )
             if not concepts:
                 raise WebStudyError("핵심 개념을 추출하지 못했습니다.")
             if cb := _cb.get("after_concepts"):
@@ -90,6 +97,7 @@ class WebStudyManager:
             questions = generate_or_load_questions(
                 parsed_doc, concepts, markdown_for_llm, file_hash, config, llm_client,
                 on_progress=_cb.get("on_questions_progress"),
+                material_store=material_store,
             )
         if not questions:
             raise WebStudyError("질문을 생성하지 못했습니다.")
@@ -111,12 +119,15 @@ class WebStudyManager:
             self._current_indexes[session.session_id] = 0
             self._session_modes[session.session_id] = session_mode
             self._document_titles[session.session_id] = parsed_doc.title
+        self._persist(session.session_id)
         return session
 
     def get_session(self, session_id: str) -> StudySession:
         try:
             return self._sessions[session_id]
         except KeyError as exc:
+            if self._restore(session_id):
+                return self._sessions[session_id]
             raise WebStudyError("학습 세션을 찾을 수 없습니다.") from exc
 
     def current_question(self, session_id: str) -> Question | None:
@@ -140,6 +151,7 @@ class WebStudyManager:
         attempt_number = self._attempt_number(session, question)
         if attempt_number > MAX_ATTEMPTS_PER_QUESTION:
             self._advance(session_id)
+            self._persist(session_id)
             return session
         config = self._configs[session_id]
         evaluation = evaluate_answer(
@@ -159,6 +171,8 @@ class WebStudyManager:
             self._advance(session_id)
         if self.current_question(session_id) is None:
             self.finish(session_id)
+        else:
+            self._persist(session_id)
         return session
 
     def skip(self, session_id: str) -> StudySession:
@@ -185,6 +199,8 @@ class WebStudyManager:
         self._advance(session_id)
         if self.current_question(session_id) is None:
             self.finish(session_id)
+        else:
+            self._persist(session_id)
         return session
 
     def finish(self, session_id: str) -> StudySession:
@@ -196,19 +212,21 @@ class WebStudyManager:
                 evaluate_concept_answers(session, llm_client)
             generate_session_summary(session, llm_client)
             session.ended_at = utc_now()
-            if self._session_modes.get(session_id) == "concept_review":
-                save_concept_review_report(
-                    session,
-                    _DocumentRef(session.document_id, self._document_titles.get(session_id)),
-                    config,
-                )
-            else:
-                save_json(
-                    session,
-                    document_output_dir(
-                        config, _DocumentRef(session.document_id, self._document_titles.get(session_id))
-                    ) / f"{session.session_id}.json",
-                )
+            if self._session_store is None:
+                if self._session_modes.get(session_id) == "concept_review":
+                    save_concept_review_report(
+                        session,
+                        _DocumentRef(session.document_id, self._document_titles.get(session_id)),
+                        config,
+                    )
+                else:
+                    save_json(
+                        session,
+                        document_output_dir(
+                            config, _DocumentRef(session.document_id, self._document_titles.get(session_id))
+                        ) / f"{session.session_id}.json",
+                    )
+            self._persist(session_id)
         return session
 
     def snapshot(self, session_id: str) -> dict:
@@ -249,7 +267,52 @@ class WebStudyManager:
         self._advance(session_id)
         if self._current_indexes[session_id] >= len(session.concepts):
             self.finish(session_id)
+        else:
+            self._persist(session_id)
         return session
+
+    def _persist(self, session_id: str) -> None:
+        if self._session_store is None:
+            return
+        session = self._sessions[session_id]
+        config = self._configs[session_id]
+        self._session_store.save(
+            StoredWebSession(
+                session=session,
+                current_index=self._current_indexes.get(session_id, 0),
+                session_mode=self._session_modes.get(session_id, "study"),
+                document_title=self._document_titles.get(session_id),
+                config={
+                    "model": config.model,
+                    "output_dir": str(config.output_dir),
+                    "cache_dir": str(config.cache_dir),
+                    "skip_cache": config.skip_cache,
+                },
+            )
+        )
+
+    def _restore(self, session_id: str) -> bool:
+        if self._session_store is None:
+            return False
+        stored = self._session_store.load(session_id)
+        if stored is None:
+            return False
+        config = load_app_config(
+            difficulty=stored.session.difficulty,
+            output_language=stored.session.output_language,
+            model=stored.config.get("model"),
+            output_dir=stored.config.get("output_dir", "./outputs"),
+            cache_dir=stored.config.get("cache_dir", "./cache"),
+            skip_cache=stored.config.get("skip_cache", False),
+        )
+        with self._lock:
+            self._sessions[session_id] = stored.session
+            self._configs[session_id] = config
+            self._llm_clients[session_id] = LLMClient(model=config.model, api_key=config.api_key)
+            self._current_indexes[session_id] = stored.current_index
+            self._session_modes[session_id] = stored.session_mode
+            self._document_titles[session_id] = stored.document_title
+        return True
 
     def _concept_review_snapshot(self, session_id: str, session: StudySession) -> dict:
         index = self._current_indexes.get(session_id, 0)

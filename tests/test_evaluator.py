@@ -263,6 +263,76 @@ def test_semantic_match_short_korean_answer():
     assert required_point not in normalized.missing_points
 
 
+def test_llm_matched_point_id_is_not_cancelled_by_keyword_postprocessing():
+    required_point = RequiredPoint(
+        point_id="rp_001",
+        text=(
+            "Redis가 메모리 저장을 통해 응답 시간을 줄이는 이유와, 디스크 기반 DB에 대한 "
+            "읽기 요청 부하가 줄어드는 결과를 연결해 설명해야 한다."
+        ),
+        gentle_hint="외부 요청 흐름을 생각해보게.",
+        direct_hint="원본 DB 부하와 연결해보게.",
+    )
+    evaluation = AnswerEvaluation(
+        matched_point_ids=["rp_001"],
+        matched_points=[],
+        missing_points=[required_point.text],
+        misconceptions=[],
+        score=0.0,
+        status="insufficient",
+        feedback_to_student="핵심을 짚었네.",
+        next_action="ask_followup",
+    )
+
+    normalized = normalize_evaluation(
+        evaluation,
+        attempt_number=1,
+        required_points=[required_point.text],
+        student_answer=(
+            "자주 조회되는 데이터를 메모리에서 바로 꺼내면 외부 요청 흐름이 줄어들어 "
+            "데이터베이스 부하가 낮아집니다."
+        ),
+        required_point_definitions=[required_point],
+    )
+
+    assert normalized.matched_point_ids == ["rp_001"]
+    assert normalized.matched_points == [required_point.text]
+    assert normalized.missing_points == []
+    assert normalized.score == 1
+    assert normalized.status == "sufficient"
+
+
+def test_unknown_matched_point_id_is_ignored():
+    required_point = RequiredPoint(
+        point_id="rp_001",
+        text="메모리 접근은 응답 시간을 줄인다.",
+        gentle_hint="접근 위치를 생각해보게.",
+        direct_hint="메모리 지연을 생각해보게.",
+    )
+    evaluation = AnswerEvaluation(
+        matched_point_ids=["rp_999"],
+        matched_points=[],
+        missing_points=[],
+        misconceptions=[],
+        score=1.0,
+        status="sufficient",
+        feedback_to_student="충분하네.",
+        next_action="next_question",
+    )
+
+    normalized = normalize_evaluation(
+        evaluation,
+        attempt_number=1,
+        required_points=[required_point.text],
+        student_answer="관련 없는 답변",
+        required_point_definitions=[required_point],
+    )
+
+    assert normalized.matched_point_ids == []
+    assert normalized.score == 0
+    assert normalized.status == "insufficient"
+
+
 def test_added_required_point_moves_from_missing_to_matched():
     required_point = "다시 사용할 때 학습 부담이 적은 것"
     evaluation = AnswerEvaluation(
@@ -459,7 +529,7 @@ def test_evaluate_answer_uses_fake_llm_client():
     )
     fake = FakeLLMClient(
         {
-            "matched_points": ["generalization"],
+            "matched_point_ids": ["rp_001"],
             "missing_points": [],
             "misconceptions": [],
             "score": 0.8,

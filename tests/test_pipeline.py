@@ -83,3 +83,50 @@ def test_concept_review_requires_study_feature_outputs(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="먼저 같은 PDF로 start"):
         load_generated_learning_materials(document, config)
+
+
+class FakeMaterialStore:
+    def __init__(self, concepts=None, questions=None):
+        self.concepts = concepts
+        self.questions = questions
+
+    def load_concepts(self, file_hash, difficulty, output_language):
+        assert (file_hash, difficulty, output_language) == ("hash", "normal", "ko")
+        return self.concepts
+
+    def load_questions(self, file_hash, difficulty, output_language):
+        assert (file_hash, difficulty, output_language) == ("hash", "normal", "ko")
+        return self.questions
+
+
+def test_concept_review_loads_materials_from_database_store_without_output_files(tmp_path):
+    config = AppConfig(output_dir=tmp_path)
+    document = SimpleNamespace(document_id="doc_test", title="Lecture")
+    concept = Concept(
+        concept_id="concept_001", title="Caching", summary="Summary", importance="Important", source_pages=[1]
+    )
+    questions = [_question("explanation", 1), _question("application", 2)]
+
+    loaded_concepts, loaded_questions = load_generated_learning_materials(
+        document,
+        config,
+        file_hash="hash",
+        material_store=FakeMaterialStore([concept], questions),
+    )
+
+    assert loaded_concepts == [concept]
+    assert loaded_questions == questions
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_concept_review_requires_database_materials_when_store_is_configured(tmp_path):
+    config = AppConfig(output_dir=tmp_path)
+    document = SimpleNamespace(document_id="doc_test", title="Lecture")
+
+    with pytest.raises(FileNotFoundError, match="데이터베이스"):
+        load_generated_learning_materials(
+            document,
+            config,
+            file_hash="hash",
+            material_store=FakeMaterialStore(),
+        )

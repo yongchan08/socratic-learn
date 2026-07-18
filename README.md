@@ -17,7 +17,12 @@ cp .env.example .env
 ```env
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-5-mini
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/socratic_tutor
 ```
+
+웹 학습 세션을 새로고침이나 서버 재시작 후에도 이어가려면 PostgreSQL 데이터베이스를 만들고
+`DATABASE_URL`을 설정합니다. 웹 서버 시작 시 `web_study_sessions` 테이블이 자동 생성됩니다.
+`DATABASE_URL`을 생략하면 웹 세션은 기존처럼 서버 메모리에만 보관됩니다.
 
 웹 UI로 실행하려면 프론트엔드를 빌드한 뒤 FastAPI 서버를 실행합니다.
 
@@ -195,7 +200,7 @@ MVP에서 학습 루프가 사용하는 Concept 필드는 `concept_id`, `title`,
 
 ## Output Files
 
-앱은 `outputs/`에는 사람이 확인할 결과를, `cache/`에는 재실행을 빠르게 하기 위한 중간 산출물을 저장합니다.
+CLI는 `outputs/`에는 사람이 확인할 결과를, `cache/`에는 재실행을 빠르게 하기 위한 중간 산출물을 저장합니다. `DATABASE_URL`이 설정된 웹 서버는 이 폴더 대신 PostgreSQL을 사용합니다.
 
 ```text
 outputs/
@@ -219,6 +224,14 @@ uploads/
 ```
 
 세션 JSON에는 난이도, 출력 언어, 최대 5개의 개념, 개념당 2개의 평가 질문, 개념별 자유 답변(`concept_answers`), 질문별 필수 요소 평가(`answers`)와 요약이 저장됩니다. 각 개념의 첫 질문은 개념 자체를 확인하는 `explanation`, 두 번째 질문은 `comparison` 또는 `application`입니다. 제거된 `subject`, `max_concepts`, `questions_per_concept` 입력 필드는 저장하지 않습니다.
+
+웹 저장 테이블은 다음과 같습니다.
+
+- `learning_documents`: PDF 해시와 파싱된 문서·페이지 JSONB
+- `learning_materials`: PDF 해시·난이도·언어별 Concept 및 Question JSONB
+- `web_study_sessions`: 현재 인덱스, 답변, 평가, 요약을 포함한 웹 세션 JSONB
+
+웹에서 업로드한 원본 PDF는 PostgreSQL에 저장하지 않으며 처리 후 삭제합니다. 같은 PDF가 다시 업로드되면 파일 해시로 `learning_documents`를 조회하고, 같은 난이도·언어의 Concept과 Question이 있으면 `learning_materials`에서 재사용합니다. 따라서 DB를 사용하는 웹 실행에서는 별도의 로컬 `cache/`가 필요하지 않습니다. `outputs/`와 `cache/`는 CLI 및 `DATABASE_URL` 미설정 호환 모드에서만 사용합니다.
 
 `v6_unified_points_q2` 질문 캐시는 개념당 설명 질문 1개와 비교·응용 질문 1개를 포함합니다. 각 필수 요소는 채점 문장과 두 단계 힌트를 하나의 객체로 저장합니다. 이전 질문 캐시는 자동 재사용하지 않으며, 같은 PDF를 다시 학습할 때 새 정책으로 질문을 생성합니다.
 

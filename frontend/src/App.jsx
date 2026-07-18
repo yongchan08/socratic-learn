@@ -6,6 +6,7 @@ const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
 const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
 const MAX_ATTEMPTS_PER_QUESTION = 3;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const ACTIVE_SESSION_KEY = "socratic_tutor_active_session_id";
 
 const initialForm = {
   difficulty: "normal",
@@ -262,6 +263,20 @@ export function App() {
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
+    const sessionId = window.localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!sessionId) return;
+    setBusy(true);
+    fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 404) window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+          throw new Error(payload.detail || "이전 학습 세션을 불러오지 못했습니다.");
+        }
+        setState(payload);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBusy(false));
   }, []);
 
   const concepts = state?.session?.concepts ?? [];
@@ -397,6 +412,7 @@ export function App() {
             setLoadingSteps((prev) => prev.map((s) => ({ ...s, done: true })));
             setDismissedTransitionAnswerId(null);
             setState(evt.payload);
+            window.localStorage.setItem(ACTIVE_SESSION_KEY, evt.payload.session.session_id);
             setAnswer("");
           } else if (evt.step === "error") {
             throw new Error(evt.message);
@@ -614,7 +630,11 @@ export function App() {
         <div className="app-bg-overlay"/>
         <div className="app-frame">
           <TopBar
-            onAcademy={() => { setState(null); setAnswer(""); }}
+            onAcademy={() => {
+              window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+              setState(null);
+              setAnswer("");
+            }}
             audioSettings={audioSettings}
           />
 
@@ -678,7 +698,7 @@ export function App() {
             </div>
 
             {/* ── Center column ── */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 0 }}>
+            <div className="study-main">
               <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
                 <div className="ssb-component">
                   <div className="ssb-speech">

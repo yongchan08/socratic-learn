@@ -24,12 +24,18 @@ def normalize_evaluation(
     if required_points:
         matched_points = _matched_required_points(
             required_points=required_points,
+            required_point_definitions=required_point_definitions or [],
+            llm_matched_point_ids=data["matched_point_ids"],
             llm_matched_points=data["matched_points"],
             student_answer=student_answer or "",
         )
         missing_points = [point for point in required_points if point not in matched_points]
         score = len(matched_points) / len(required_points)
         data["matched_points"] = matched_points
+        definition_by_text = {point.text: point.point_id for point in required_point_definitions or []}
+        data["matched_point_ids"] = [
+            definition_by_text[point] for point in matched_points if point in definition_by_text
+        ]
         data["missing_points"] = missing_points
         data["score"] = score
     else:
@@ -194,14 +200,21 @@ def evaluate_answer(
 
 def _matched_required_points(
     required_points: list[str],
+    required_point_definitions: list[RequiredPoint],
+    llm_matched_point_ids: list[str],
     llm_matched_points: list[str],
     student_answer: str,
 ) -> list[str]:
+    point_by_id = {point.point_id: point.text for point in required_point_definitions}
+    llm_matched_by_id = {
+        point_by_id[point_id] for point_id in llm_matched_point_ids if point_id in point_by_id
+    }
     matched: list[str] = []
     for required_point in required_points:
-        if _is_semantic_match(required_point, llm_matched_points) or _has_obvious_keyword_overlap(
-            required_point,
-            student_answer,
+        if (
+            required_point in llm_matched_by_id
+            or _is_semantic_match(required_point, llm_matched_points)
+            or _has_obvious_keyword_overlap(required_point, student_answer)
         ):
             matched.append(required_point)
     return matched
