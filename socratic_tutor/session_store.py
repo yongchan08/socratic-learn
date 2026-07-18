@@ -77,6 +77,15 @@ class PostgresSessionStore:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS learning_courses (
+                    course_id TEXT PRIMARY KEY,
+                    course_data JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
 
     def save(self, stored: StoredWebSession) -> None:
         session_data = stored.session.model_dump(mode="json")
@@ -124,6 +133,25 @@ class PostgresSessionStore:
             document_title=row[3],
             config=row[4],
         )
+
+    def save_course(self, course: dict[str, Any]) -> None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO learning_courses (course_id, course_data, updated_at)
+                VALUES (%s, %s::jsonb, NOW())
+                ON CONFLICT (course_id) DO UPDATE SET
+                    course_data = EXCLUDED.course_data,
+                    updated_at = NOW()
+                """,
+                (course["course_id"], json.dumps(course, ensure_ascii=False)),
+            )
+
+    def load_course(self, course_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT course_data FROM learning_courses WHERE course_id = %s", (course_id,))
+            row = cursor.fetchone()
+        return row[0] if row else None
 
     def save_document(self, file_hash: str, document: ParsedDocument) -> None:
         with self._connect() as connection, connection.cursor() as cursor:

@@ -35,17 +35,22 @@ def _session() -> StudySession:
 
 class FakeStore:
     def __init__(self, stored=None):
-        self.stored = stored
+        self.stored = {stored.session.session_id: stored} if stored else {}
         self.saved = []
+        self.courses = {}
 
     def save(self, stored):
         self.saved.append(stored)
-        self.stored = stored
+        self.stored[stored.session.session_id] = stored
 
     def load(self, session_id):
-        if self.stored and self.stored.session.session_id == session_id:
-            return self.stored
-        return None
+        return self.stored.get(session_id)
+
+    def save_course(self, course):
+        self.courses[course["course_id"]] = course
+
+    def load_course(self, course_id):
+        return self.courses.get(course_id)
 
 
 def test_persist_saves_session_progress_and_non_secret_config():
@@ -83,3 +88,59 @@ def test_get_session_restores_missing_in_memory_session(monkeypatch):
     assert restored == session
     assert manager.current_question(session.session_id).question_id == "q_001_001"
     assert manager._configs[session.session_id].api_key == "restored-key"
+
+
+def test_course_unlocks_stages_in_order_and_marks_finished_stage_complete(monkeypatch):
+    store = FakeStore()
+    manager = WebStudyManager(session_store=store)
+    course = manager.create_course()
+    session = _session()
+    manager._sessions[session.session_id] = session
+    manager._configs[session.session_id] = AppConfig(api_key="test-key")
+    manager._llm_clients[session.session_id] = None
+    manager._current_indexes[session.session_id] = 0
+    manager._session_modes[session.session_id] = "study"
+    manager._document_titles[session.session_id] = "첫 강의"
+    manager._course_links[session.session_id] = (course["course_id"], 1)
+    manager._attach_course_session(course["course_id"], 1, session.session_id, "첫 강의")
+    monkeypatch.setattr("socratic_tutor.web_service.generate_session_summary", lambda session, client: None)
+
+    manager.finish(session.session_id)
+
+    saved_course = manager.get_course(course["course_id"])
+    assert saved_course["stages"][0]["completed"] is True
+    assert saved_course["stages"][0]["document_title"] == "첫 강의"
+
+
+def test_course_review_namespaces_concepts_and_questions(monkeypatch):
+    store = FakeStore()
+    manager = WebStudyManager(session_store=store)
+    course = manager.create_course()
+    for index, stage in enumerate(course["stages"], start=1):
+        session = _session().model_copy(update={
+            "session_id": f"session_stage_{index}",
+            "document_id": f"doc_{index}",
+            "ended_at": datetime.now(timezone.utc),
+        })
+        stored = StoredWebSession(
+            session=session,
+            current_index=1,
+            session_mode="study",
+            document_title=f"강의 {index}",
+            config={"model": "test-model"},
+        )
+        store.stored[session.session_id] = stored
+        stage["session_id"] = session.session_id
+        stage["completed"] = True
+    store.save_course(course)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    review = manager.create_course_review(course["course_id"])
+
+    assert [concept.concept_id for concept in review.concepts] == [
+        "stage_1_concept_001", "stage_2_concept_001", "stage_3_concept_001"
+    ]
+    assert [question.question_id for question in review.questions] == [
+        "stage_1_q_001_001", "stage_2_q_001_001", "stage_3_q_001_001"
+    ]
+    assert review.questions[1].concept_id == "stage_2_concept_001"

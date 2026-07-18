@@ -34,6 +34,7 @@ class WebStudyManager:
         self._current_indexes: dict[str, int] = {}
         self._session_modes: dict[str, str] = {}
         self._document_titles: dict[str, str | None] = {}
+        self._course_links: dict[str, tuple[str, int]] = {}
         self._lock = Lock()
         self._session_store = session_store if session_store is not None else PostgresSessionStore.from_environment()
 
@@ -48,6 +49,8 @@ class WebStudyManager:
         skip_cache: bool = False,
         on_progress: dict | None = None,
         session_mode: str = "study",
+        course_id: str | None = None,
+        stage_index: int | None = None,
     ) -> StudySession:
         """학습 세션을 생성합니다.
 
@@ -119,6 +122,84 @@ class WebStudyManager:
             self._current_indexes[session.session_id] = 0
             self._session_modes[session.session_id] = session_mode
             self._document_titles[session.session_id] = parsed_doc.title
+            if course_id is not None and stage_index is not None:
+                self._course_links[session.session_id] = (course_id, stage_index)
+                self._attach_course_session(course_id, stage_index, session.session_id, parsed_doc.title)
+        self._persist(session.session_id)
+        return session
+
+    def create_course(self) -> dict:
+        if self._session_store is None:
+            raise WebStudyError("학습 로드맵을 사용하려면 DATABASE_URL 설정이 필요합니다.")
+        course = {
+            "course_id": f"course_{uuid.uuid4().hex[:12]}",
+            "title": "나의 소크라테스 학습 여정",
+            "stages": [
+                {"stage_index": index, "title": f"{index}단계 강의", "session_id": None,
+                 "document_title": None, "completed": False}
+                for index in range(1, 4)
+            ],
+            "final_review_session_id": None,
+            "created_at": utc_now().isoformat(),
+        }
+        self._session_store.save_course(course)
+        return course
+
+    def get_course(self, course_id: str) -> dict:
+        if self._session_store is None:
+            raise WebStudyError("학습 로드맵을 사용할 수 없습니다.")
+        course = self._session_store.load_course(course_id)
+        if course is None:
+            raise WebStudyError("학습 로드맵을 찾을 수 없습니다.")
+        return course
+
+    def create_course_review(self, course_id: str) -> StudySession:
+        course = self.get_course(course_id)
+        if not all(stage["completed"] for stage in course["stages"]):
+            raise WebStudyError("모든 소크라테스 학습 단계를 완료해야 개념 리포트를 시작할 수 있습니다.")
+        stored_stages = [self._session_store.load(stage["session_id"]) for stage in course["stages"]]
+        if any(stored is None for stored in stored_stages):
+            raise WebStudyError("단계별 학습 세션을 불러오지 못했습니다.")
+
+        concepts: list = []
+        questions: list[Question] = []
+        for stage, stored in zip(course["stages"], stored_stages):
+            prefix = f"stage_{stage['stage_index']}_"
+            concept_ids = {}
+            for concept in stored.session.concepts:
+                new_id = f"{prefix}{concept.concept_id}"
+                concept_ids[concept.concept_id] = new_id
+                concepts.append(concept.model_copy(update={"concept_id": new_id}))
+            for question in stored.session.questions:
+                questions.append(question.model_copy(update={
+                    "question_id": f"{prefix}{question.question_id}",
+                    "concept_id": concept_ids[question.concept_id],
+                }))
+
+        first = stored_stages[0]
+        session = StudySession(
+            session_id=f"course_review_{utc_now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}",
+            document_id=course_id,
+            difficulty=first.session.difficulty,
+            output_language=first.session.output_language,
+            concepts=concepts,
+            questions=questions,
+            started_at=utc_now(),
+        )
+        config = load_app_config(
+            difficulty=session.difficulty,
+            output_language=session.output_language,
+            model=first.config.get("model"),
+        )
+        with self._lock:
+            self._sessions[session.session_id] = session
+            self._configs[session.session_id] = config
+            self._llm_clients[session.session_id] = LLMClient(model=config.model, api_key=config.api_key)
+            self._current_indexes[session.session_id] = 0
+            self._session_modes[session.session_id] = "concept_review"
+            self._document_titles[session.session_id] = course["title"]
+        course["final_review_session_id"] = session.session_id
+        self._session_store.save_course(course)
         self._persist(session.session_id)
         return session
 
@@ -227,6 +308,7 @@ class WebStudyManager:
                         ) / f"{session.session_id}.json",
                     )
             self._persist(session_id)
+            self._complete_course_stage(session_id)
         return session
 
     def snapshot(self, session_id: str) -> dict:
@@ -287,6 +369,8 @@ class WebStudyManager:
                     "output_dir": str(config.output_dir),
                     "cache_dir": str(config.cache_dir),
                     "skip_cache": config.skip_cache,
+                    "course_id": self._course_links.get(session_id, (None, None))[0],
+                    "stage_index": self._course_links.get(session_id, (None, None))[1],
                 },
             )
         )
@@ -312,7 +396,36 @@ class WebStudyManager:
             self._current_indexes[session_id] = stored.current_index
             self._session_modes[session_id] = stored.session_mode
             self._document_titles[session_id] = stored.document_title
+            course_id = stored.config.get("course_id")
+            stage_index = stored.config.get("stage_index")
+            if course_id is not None and stage_index is not None:
+                self._course_links[session_id] = (course_id, int(stage_index))
         return True
+
+    def _attach_course_session(
+        self, course_id: str, stage_index: int, session_id: str, document_title: str | None
+    ) -> None:
+        course = self.get_course(course_id)
+        if stage_index < 1 or stage_index > len(course["stages"]):
+            raise WebStudyError("올바르지 않은 학습 단계입니다.")
+        if stage_index > 1 and not course["stages"][stage_index - 2]["completed"]:
+            raise WebStudyError("이전 학습 단계를 먼저 완료해야 합니다.")
+        stage = course["stages"][stage_index - 1]
+        stage["session_id"] = session_id
+        stage["document_title"] = document_title
+        stage["completed"] = False
+        self._session_store.save_course(course)
+
+    def _complete_course_stage(self, session_id: str) -> None:
+        link = self._course_links.get(session_id)
+        if link is None or self._session_store is None:
+            return
+        course_id, stage_index = link
+        course = self.get_course(course_id)
+        stage = course["stages"][stage_index - 1]
+        if stage["session_id"] == session_id:
+            stage["completed"] = True
+            self._session_store.save_course(course)
 
     def _concept_review_snapshot(self, session_id: str, session: StudySession) -> dict:
         index = self._current_indexes.get(session_id, 0)

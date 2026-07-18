@@ -9,6 +9,9 @@
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | `GET` | `/api/health` | 서버 콜드 스타트 완화 및 상태 확인 |
+| `POST` | `/api/courses` | 3단계 학습 로드맵 생성 |
+| `GET` | `/api/courses/{course_id}` | 단계별 세션 및 완료 상태 조회 |
+| `POST` | `/api/courses/{course_id}/final-review` | 전체 단계의 최종 개념 리포트 생성 |
 | `POST` | `/api/sessions/stream` | PDF 업로드, 소크라테스/파인만 학습 세션 생성, 진행 상황 수신 |
 | `POST` | `/api/sessions/{session_id}/answers` | 현재 질문 또는 개념에 대한 답변 제출 |
 | `POST` | `/api/sessions/{session_id}/skip` | 현재 질문 또는 개념 건너뛰기 |
@@ -53,6 +56,8 @@ Content-Type: multipart/form-data
 | `output_language` | `ko`, `en` | 질문·피드백·요약 언어 |
 | `session_mode` | `study`, `concept_review` | 소크라테스 또는 파인만 학습 선택 |
 | `model` | 문자열, 선택 | 지정하지 않으면 서버 기본 모델 사용 |
+| `course_id` | 문자열, 선택 | 로드맵 과정 ID |
+| `stage_index` | `1`, `2`, `3`, 선택 | PDF를 연결할 로드맵 단계 |
 
 소크라테스 학습 기능을 시작하는 요청의 논리적 형태는 다음과 같다.
 
@@ -325,3 +330,5 @@ API 응답 생성
 `DATABASE_URL`이 설정된 경우 `WebStudyManager`는 StudySession, 현재 인덱스, 설정과 학습 모드를 PostgreSQL의 `web_study_sessions` 테이블에 JSONB로 저장한다. 메모리에 세션이 없으면 데이터베이스에서 복원하므로 브라우저 새로고침과 서버 재시작 후에도 이어갈 수 있다. API 키는 데이터베이스에 저장하지 않고 복원 시 서버 환경에서 다시 읽는다. `DATABASE_URL`이 없으면 기존처럼 서버 메모리만 사용한다.
 
 웹에서 파싱한 문서는 `learning_documents`에 PDF SHA-256 해시와 `ParsedDocument` JSONB로 저장한다. Concept과 Question은 `learning_materials`에 PDF 해시·난이도·출력 언어 조합별 JSONB로 저장하며, 이후 같은 조합의 업로드에서 생성 캐시로 재사용한다. 따라서 `DATABASE_URL`이 설정된 웹 흐름은 `outputs/`와 `cache/` 폴더를 읽거나 쓰지 않는다. 원본 PDF는 DB에 저장하지 않고 분석 완료 후 삭제한다.
+
+로드맵은 `learning_courses`에 저장한다. 각 단계는 `stage_index`, 문서 제목, 연결된 `session_id`, 완료 상태를 가지며 이전 단계가 완료되어야 다음 단계 세션을 만들 수 있다. 세 단계가 완료되면 최종 리포트 API가 세 세션의 Concept과 Question을 합친 `concept_review` 세션을 생성한다. 단계별 ID 충돌을 피하기 위해 Concept과 Question ID에 단계 접두사를 붙인다.

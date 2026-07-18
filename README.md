@@ -230,8 +230,11 @@ uploads/
 - `learning_documents`: PDF 해시와 파싱된 문서·페이지 JSONB
 - `learning_materials`: PDF 해시·난이도·언어별 Concept 및 Question JSONB
 - `web_study_sessions`: 현재 인덱스, 답변, 평가, 요약을 포함한 웹 세션 JSONB
+- `learning_courses`: 3단계 로드맵, 단계별 세션 연결과 완료 상태 JSONB
 
 웹에서 업로드한 원본 PDF는 PostgreSQL에 저장하지 않으며 처리 후 삭제합니다. 같은 PDF가 다시 업로드되면 파일 해시로 `learning_documents`를 조회하고, 같은 난이도·언어의 Concept과 Question이 있으면 `learning_materials`에서 재사용합니다. 따라서 DB를 사용하는 웹 실행에서는 별도의 로컬 `cache/`가 필요하지 않습니다. `outputs/`와 `cache/`는 CLI 및 `DATABASE_URL` 미설정 호환 모드에서만 사용합니다.
+
+웹 학습은 3단계 로드맵으로 구성됩니다. 각 단계에 서로 다른 PDF를 등록하고 소크라테스 질문 학습을 완료하면 다음 단계가 열린다. 세 단계를 모두 완료하면 각 단계 세션의 Concept과 Question ID에 `stage_1_`, `stage_2_`, `stage_3_` 접두사를 붙여 하나의 최종 개념 리포트 세션으로 합칩니다. 이 네임스페이스는 서로 다른 PDF가 동일한 `concept_001`, `q_001_001` ID를 생성해도 평가 연결이 충돌하지 않게 합니다.
 
 `v6_unified_points_q2` 질문 캐시는 개념당 설명 질문 1개와 비교·응용 질문 1개를 포함합니다. 각 필수 요소는 채점 문장과 두 단계 힌트를 하나의 객체로 저장합니다. 이전 질문 캐시는 자동 재사용하지 않으며, 같은 PDF를 다시 학습할 때 새 정책으로 질문을 생성합니다.
 

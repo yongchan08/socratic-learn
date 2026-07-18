@@ -48,6 +48,31 @@ class AnswerRequest(BaseModel):
     answer: str = Field(min_length=1)
 
 
+@app.post("/api/courses")
+def create_course() -> dict:
+    try:
+        return manager.create_course()
+    except WebStudyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/courses/{course_id}")
+def get_course(course_id: str) -> dict:
+    try:
+        return manager.get_course(course_id)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/courses/{course_id}/final-review")
+def create_course_review(course_id: str) -> dict:
+    try:
+        session = manager.create_course_review(course_id)
+        return manager.snapshot(session.session_id)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/health")
 def health() -> JSONResponse:
     return JSONResponse(
@@ -108,6 +133,8 @@ def create_session(
     model: str | None = Form(None),
     skip_cache: bool = Form(False),
     session_mode: str = Form("study"),
+    course_id: str | None = Form(None),
+    stage_index: int | None = Form(None),
 ) -> dict:
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
@@ -127,6 +154,8 @@ def create_session(
             model=model,
             skip_cache=skip_cache,
             session_mode=session_mode,
+            course_id=course_id,
+            stage_index=stage_index,
         )
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -145,6 +174,8 @@ def create_session_stream(
     model: str | None = Form(None),
     skip_cache: bool = Form(False),
     session_mode: str = Form("study"),
+    course_id: str | None = Form(None),
+    stage_index: int | None = Form(None),
 ) -> StreamingResponse:
     """세션 생성 진행 상황을 SSE(Server-Sent Events)로 실시간 스트리밍합니다.
 
@@ -191,6 +222,8 @@ def create_session_stream(
                 model=model,
                 skip_cache=skip_cache,
                 session_mode=session_mode,
+                course_id=course_id,
+                stage_index=stage_index,
                 on_progress={
                     "after_parse": lambda: event_queue.put(
                         _sse({"step": "concepts", "message": "🔍 핵심 개념 발굴 중..."})
