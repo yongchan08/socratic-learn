@@ -791,11 +791,11 @@ export function App() {
                     <span className="slp-progress-fill" style={{ width: `${progress}%` }}/>
                   </div>
                   <dl className="slp-stats">
-                    <div className="slp-stat-row"><dt>답변 기록</dt><dd>{answers.length}</dd></div>
                     <div className="slp-stat-row">
-                      <dt>현재 점수</dt>
-                      <dd>{lastAnswer?.evaluation ? `${Math.round(lastAnswer.evaluation.score * 100)}점` : "-"}</dd>
+                      <dt>질문 수</dt>
+                      <dd>{state.total_questions}</dd>
                     </div>
+                    <div className="slp-stat-row"><dt>응답 수</dt><dd>{answers.length}</dd></div>
                   </dl>
                 </section>
               </div>
@@ -948,21 +948,6 @@ export function App() {
                   </div>
                 </section>
 
-                {/* Records card */}
-                <section className="srp-card srp-card--records" aria-labelledby="record-card-title">
-                  <SrpCorners/>
-                  <div className="srp-card-content">
-                    <header className="srp-record-header">
-                      <h2 className="srp-record-title" id="record-card-title">학습 기록서 <span>(이번 세션)</span></h2>
-                    </header>
-                    <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true" style={{ height: 10, margin: "4px 0" }}><use href="#srpDivider"/></svg>
-                    <dl className="srp-stats">
-                      <div className="srp-stat-row"><dt>통과한 관문</dt><dd>{Math.min(state.current_index, state.total_questions)}</dd></div>
-                      <div className="srp-stat-row"><dt>총 질문 수</dt><dd>{state.total_questions}</dd></div>
-                      <div className="srp-stat-row"><dt>응답 수</dt><dd>{answers.length}</dd></div>
-                    </dl>
-                  </div>
-                </section>
               </div>
             </div>
           </div>
