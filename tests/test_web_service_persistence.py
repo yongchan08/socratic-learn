@@ -52,6 +52,20 @@ class FakeStore:
     def load_course(self, course_id):
         return self.courses.get(course_id)
 
+    def list_courses(self):
+        return list(reversed(list(self.courses.values())))
+
+    def delete_course(self, course_id):
+        course = self.courses.pop(course_id, None)
+        if course is None:
+            return None
+        session_ids = [stage["session_id"] for stage in course["stages"] if stage["session_id"]]
+        if course["final_review_session_id"]:
+            session_ids.append(course["final_review_session_id"])
+        for session_id in session_ids:
+            self.stored.pop(session_id, None)
+        return session_ids
+
 
 def test_persist_saves_session_progress_and_non_secret_config():
     store = FakeStore()
@@ -144,3 +158,37 @@ def test_course_review_namespaces_concepts_and_questions(monkeypatch):
         "stage_1_q_001_001", "stage_2_q_001_001", "stage_3_q_001_001"
     ]
     assert review.questions[1].concept_id == "stage_2_concept_001"
+
+
+def test_lists_multiple_courses_and_preserves_titles():
+    manager = WebStudyManager(session_store=FakeStore())
+
+    first = manager.create_course("운영체제")
+    second = manager.create_course("데이터베이스")
+
+    assert [course["title"] for course in manager.list_courses()] == ["데이터베이스", "운영체제"]
+    assert first["course_id"] != second["course_id"]
+
+
+def test_delete_course_removes_linked_sessions_from_store_and_memory():
+    store = FakeStore()
+    manager = WebStudyManager(session_store=store)
+    course = manager.create_course("삭제할 과정")
+    session = _session()
+    stored = StoredWebSession(
+        session=session,
+        current_index=0,
+        session_mode="study",
+        document_title="강의",
+        config={"model": "test-model"},
+    )
+    store.stored[session.session_id] = stored
+    manager._sessions[session.session_id] = session
+    course["stages"][0]["session_id"] = session.session_id
+    store.save_course(course)
+
+    manager.delete_course(course["course_id"])
+
+    assert manager.list_courses() == []
+    assert store.load(session.session_id) is None
+    assert session.session_id not in manager._sessions

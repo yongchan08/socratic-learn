@@ -9,8 +9,10 @@
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | `GET` | `/api/health` | 서버 콜드 스타트 완화 및 상태 확인 |
+| `GET` | `/api/courses` | 저장된 학습 로드맵 목록 조회 |
 | `POST` | `/api/courses` | 3단계 학습 로드맵 생성 |
 | `GET` | `/api/courses/{course_id}` | 단계별 세션 및 완료 상태 조회 |
+| `DELETE` | `/api/courses/{course_id}` | 로드맵과 연결된 세션 삭제 |
 | `POST` | `/api/courses/{course_id}/final-review` | 전체 단계의 최종 개념 리포트 생성 |
 | `POST` | `/api/sessions/stream` | PDF 업로드, 소크라테스/파인만 학습 세션 생성, 진행 상황 수신 |
 | `POST` | `/api/sessions/{session_id}/answers` | 현재 질문 또는 개념에 대한 답변 제출 |
@@ -332,3 +334,5 @@ API 응답 생성
 웹에서 파싱한 문서는 `learning_documents`에 PDF SHA-256 해시와 `ParsedDocument` JSONB로 저장한다. Concept과 Question은 `learning_materials`에 PDF 해시·난이도·출력 언어 조합별 JSONB로 저장하며, 이후 같은 조합의 업로드에서 생성 캐시로 재사용한다. 따라서 `DATABASE_URL`이 설정된 웹 흐름은 `outputs/`와 `cache/` 폴더를 읽거나 쓰지 않는다. 원본 PDF는 DB에 저장하지 않고 분석 완료 후 삭제한다.
 
 로드맵은 `learning_courses`에 저장한다. 각 단계는 `stage_index`, 문서 제목, 연결된 `session_id`, 완료 상태를 가지며 이전 단계가 완료되어야 다음 단계 세션을 만들 수 있다. 세 단계가 완료되면 최종 리포트 API가 세 세션의 Concept과 Question을 합친 `concept_review` 세션을 생성한다. 단계별 ID 충돌을 피하기 위해 Concept과 Question ID에 단계 접두사를 붙인다.
+
+프론트엔드의 첫 화면은 로드맵 보관함이다. 사용자는 여러 로드맵을 생성하고 최근 수정 순으로 조회할 수 있다. 로드맵 삭제 시 해당 로드맵에 연결된 단계 세션과 최종 리포트 세션은 `web_study_sessions`에서 함께 삭제하지만, 다른 로드맵에서도 재사용 가능한 `learning_documents`와 `learning_materials` 데이터는 유지한다.

@@ -48,10 +48,22 @@ class AnswerRequest(BaseModel):
     answer: str = Field(min_length=1)
 
 
-@app.post("/api/courses")
-def create_course() -> dict:
+class CourseRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=100)
+
+
+@app.get("/api/courses")
+def list_courses() -> list[dict]:
     try:
-        return manager.create_course()
+        return manager.list_courses()
+    except WebStudyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/courses")
+def create_course(request: CourseRequest | None = None) -> dict:
+    try:
+        return manager.create_course(request.title if request else None)
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -60,6 +72,14 @@ def create_course() -> dict:
 def get_course(course_id: str) -> dict:
     try:
         return manager.get_course(course_id)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/courses/{course_id}", status_code=204)
+def delete_course(course_id: str) -> None:
+    try:
+        manager.delete_course(course_id)
     except WebStudyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

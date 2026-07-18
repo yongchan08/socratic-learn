@@ -1,4 +1,4 @@
-import { BookOpen, Check, FileUp, Flag, Landmark, Loader2, Lock, Search, Send, Settings, Scroll } from "lucide-react";
+import { BookOpen, Check, FileUp, Flag, Landmark, Loader2, Lock, Plus, Search, Send, Settings, Scroll, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -251,6 +251,7 @@ export function App() {
   const [form, setForm] = useState(initialForm);
   const [state, setState] = useState(null);
   const [course, setCourse] = useState(null);
+  const [courses, setCourses] = useState([]);
   const [selectedStage, setSelectedStage] = useState(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -267,38 +268,80 @@ export function App() {
   useEffect(() => {
     fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
     const existingCourseId = window.localStorage.getItem(ACTIVE_COURSE_KEY);
-    const courseRequest = existingCourseId
-      ? fetch(`${API_BASE}/api/courses/${encodeURIComponent(existingCourseId)}`)
-      : fetch(`${API_BASE}/api/courses`, { method: "POST" });
-    courseRequest
+    fetch(`${API_BASE}/api/courses`)
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.detail || "학습 로드맵을 불러오지 못했습니다.");
-        window.localStorage.setItem(ACTIVE_COURSE_KEY, payload.course_id);
-        setCourse(payload);
+        if (!response.ok) throw new Error(payload.detail || "학습 로드맵 목록을 불러오지 못했습니다.");
+        setCourses(payload);
       })
       .catch((err) => setError(err.message));
     const sessionId = window.localStorage.getItem(ACTIVE_SESSION_KEY);
     if (!sessionId) return;
     setBusy(true);
-    fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          if (response.status === 404) window.localStorage.removeItem(ACTIVE_SESSION_KEY);
-          throw new Error(payload.detail || "이전 학습 세션을 불러오지 못했습니다.");
-        }
-        setState(payload);
+    Promise.all([
+      fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }),
+      existingCourseId ? fetch(`${API_BASE}/api/courses/${encodeURIComponent(existingCourseId)}`) : null,
+    ])
+      .then(async ([sessionResponse, courseResponse]) => {
+        const sessionPayload = await sessionResponse.json().catch(() => ({}));
+        if (!sessionResponse.ok) throw new Error(sessionPayload.detail || "이전 학습 세션을 불러오지 못했습니다.");
+        if (courseResponse?.ok) setCourse(await courseResponse.json());
+        setState(sessionPayload);
       })
       .catch((err) => setError(err.message))
       .finally(() => setBusy(false));
   }, []);
+
+  async function createNewCourse() {
+    const title = window.prompt("새 학습 로드맵의 이름을 입력하세요.", "새 학습 로드맵");
+    if (title === null) return;
+    setBusy(true); setError("");
+    try {
+      const nextCourse = await request("/api/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim() || "새 학습 로드맵" }),
+      });
+      setCourses((current) => [nextCourse, ...current]);
+      window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
+      setCourse(nextCourse);
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  function openCourse(nextCourse) {
+    window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
+    setCourse(nextCourse);
+    setSelectedStage(null);
+    setError("");
+  }
+
+  async function deleteCourse(event, courseId) {
+    event.stopPropagation();
+    if (!window.confirm("이 로드맵과 연결된 학습 기록을 삭제할까요?")) return;
+    setBusy(true); setError("");
+    try {
+      await request(`/api/courses/${encodeURIComponent(courseId)}`, { method: "DELETE" });
+      setCourses((current) => current.filter((item) => item.course_id !== courseId));
+      if (window.localStorage.getItem(ACTIVE_COURSE_KEY) === courseId) {
+        window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+      }
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  function returnToLibrary() {
+    window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setCourse(null); setState(null); setSelectedStage(null); setAnswer(""); setError("");
+  }
 
   async function refreshCourse() {
     const courseId = course?.course_id ?? window.localStorage.getItem(ACTIVE_COURSE_KEY);
     if (!courseId) return;
     const nextCourse = await request(`/api/courses/${encodeURIComponent(courseId)}`);
     setCourse(nextCourse);
+    setCourses((current) => current.map((item) => item.course_id === nextCourse.course_id ? nextCourse : item));
   }
 
   async function returnToRoadmap() {
@@ -525,6 +568,51 @@ export function App() {
 
   /* ── Start screen ────────────────────────────────────────────────────── */
 
+  if (!state && !course) {
+    return (
+      <div style={{ background: "#050504" }}>
+        <SvgDefs/>
+        <div className="app-bg library-bg">
+          <div className="app-bg-overlay"/>
+          <div className="app-frame">
+            <TopBar audioSettings={audioSettings}/>
+            <main className="library-shell">
+              <header className="library-heading">
+                <div><span>학당 서고</span><h1>나의 학습 로드맵</h1></div>
+                <p>강의 묶음을 만들고 단계별 소크라테스 학습을 이어가세요.</p>
+              </header>
+              {error && <div className="roadmap-error library-error">{error}</div>}
+              <section className="course-grid" aria-label="학습 로드맵 목록">
+                <button type="button" className="course-card course-card-new" onClick={createNewCourse} disabled={busy}>
+                  <span className="course-new-icon">{busy ? <Loader2 className="spin"/> : <Plus/>}</span>
+                  <strong>새 로드맵 만들기</strong>
+                  <small>3개의 강의 PDF로 학습 여정을 시작하세요.</small>
+                </button>
+                {courses.map((item, index) => {
+                  const completed = item.stages.filter((stage) => stage.completed).length;
+                  const documents = item.stages.filter((stage) => stage.document_title).length;
+                  const date = new Date(item.updated_at ?? item.created_at).toLocaleDateString("ko-KR");
+                  return (
+                    <article className={`course-card course-card-existing tone-${index % 4}`} key={item.course_id} onClick={() => openCourse(item)}>
+                      <div className="course-card-top">
+                        <span className="course-card-emblem">{["📜", "🏛️", "🦉", "⚡"][index % 4]}</span>
+                        <button type="button" aria-label="로드맵 삭제" onClick={(event) => deleteCourse(event, item.course_id)}><Trash2/></button>
+                      </div>
+                      <h2>{item.title}</h2>
+                      <p>{date} · PDF {documents}개</p>
+                      <div className="course-card-progress"><span style={{ width: `${(completed / 3) * 100}%` }}/></div>
+                      <small>{completed}/3 단계 완료</small>
+                    </article>
+                  );
+                })}
+              </section>
+            </main>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!state && !selectedStage) {
     const allStagesComplete = course?.stages?.every((stage) => stage.completed) ?? false;
     return (
@@ -533,7 +621,7 @@ export function App() {
         <div className="app-bg roadmap-bg">
           <div className="app-bg-overlay"/>
           <div className="app-frame">
-            <TopBar audioSettings={audioSettings}/>
+            <TopBar onAcademy={returnToLibrary} audioSettings={audioSettings}/>
             <main className="roadmap-shell">
               <section className="roadmap-scroll">
                 <header className="roadmap-heading">

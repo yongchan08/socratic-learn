@@ -153,6 +153,34 @@ class PostgresSessionStore:
             row = cursor.fetchone()
         return row[0] if row else None
 
+    def list_courses(self) -> list[dict[str, Any]]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT course_data, updated_at FROM learning_courses ORDER BY updated_at DESC"
+            )
+            rows = cursor.fetchall()
+        courses = []
+        for course_data, updated_at in rows:
+            course = dict(course_data)
+            course["updated_at"] = updated_at.isoformat()
+            courses.append(course)
+        return courses
+
+    def delete_course(self, course_id: str) -> list[str] | None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT course_data FROM learning_courses WHERE course_id = %s FOR UPDATE", (course_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            course = row[0]
+            session_ids = [stage["session_id"] for stage in course.get("stages", []) if stage.get("session_id")]
+            if course.get("final_review_session_id"):
+                session_ids.append(course["final_review_session_id"])
+            if session_ids:
+                cursor.execute("DELETE FROM web_study_sessions WHERE session_id = ANY(%s)", (session_ids,))
+            cursor.execute("DELETE FROM learning_courses WHERE course_id = %s", (course_id,))
+        return session_ids
+
     def save_document(self, file_hash: str, document: ParsedDocument) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(

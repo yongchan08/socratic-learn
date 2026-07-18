@@ -128,12 +128,12 @@ class WebStudyManager:
         self._persist(session.session_id)
         return session
 
-    def create_course(self) -> dict:
+    def create_course(self, title: str | None = None) -> dict:
         if self._session_store is None:
             raise WebStudyError("학습 로드맵을 사용하려면 DATABASE_URL 설정이 필요합니다.")
         course = {
             "course_id": f"course_{uuid.uuid4().hex[:12]}",
-            "title": "나의 소크라테스 학습 여정",
+            "title": title.strip() if title and title.strip() else "새 학습 로드맵",
             "stages": [
                 {"stage_index": index, "title": f"{index}단계 강의", "session_id": None,
                  "document_title": None, "completed": False}
@@ -144,6 +144,27 @@ class WebStudyManager:
         }
         self._session_store.save_course(course)
         return course
+
+    def list_courses(self) -> list[dict]:
+        if self._session_store is None:
+            raise WebStudyError("학습 로드맵을 사용하려면 DATABASE_URL 설정이 필요합니다.")
+        return self._session_store.list_courses()
+
+    def delete_course(self, course_id: str) -> None:
+        if self._session_store is None:
+            raise WebStudyError("학습 로드맵을 사용할 수 없습니다.")
+        session_ids = self._session_store.delete_course(course_id)
+        if session_ids is None:
+            raise WebStudyError("학습 로드맵을 찾을 수 없습니다.")
+        with self._lock:
+            for session_id in session_ids:
+                self._sessions.pop(session_id, None)
+                self._configs.pop(session_id, None)
+                self._llm_clients.pop(session_id, None)
+                self._current_indexes.pop(session_id, None)
+                self._session_modes.pop(session_id, None)
+                self._document_titles.pop(session_id, None)
+                self._course_links.pop(session_id, None)
 
     def get_course(self, course_id: str) -> dict:
         if self._session_store is None:
