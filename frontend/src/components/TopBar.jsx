@@ -1,6 +1,7 @@
 import { Settings } from "lucide-react";
 
-export function TopBar({ onAcademy, audioSettings }) {
+export function TopBar({ onAcademy, academyLabel = "학당", audioSettings, courseTitle, progressPercent, userLabel }) {
+  const showCourseBlock = Boolean(courseTitle) || typeof progressPercent === "number";
   return (
     <header className="slt-topbar" role="banner">
       <span className="slt-edge slt-edge--top" aria-hidden="true"/>
@@ -10,14 +11,28 @@ export function TopBar({ onAcademy, audioSettings }) {
       <svg className="slt-corner slt-corner--left" aria-hidden="true" focusable="false"><use href="#sltCorner"/></svg>
       <svg className="slt-corner slt-corner--right" aria-hidden="true" focusable="false"><use href="#sltCorner"/></svg>
       <h1 className="slt-title">Socratic Lecture Tutor</h1>
+      {showCourseBlock && (
+        <div className="slt-course" aria-label="현재 학습 진행 상태">
+          {courseTitle && <span className="slt-course-title">{courseTitle}</span>}
+          {typeof progressPercent === "number" && (
+            <span className="slt-course-progress">
+              <span className="slt-course-progress-track">
+                <span className="slt-course-progress-fill" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}/>
+              </span>
+              <span className="slt-course-progress-label">{Math.round(progressPercent)}%</span>
+            </span>
+          )}
+        </div>
+      )}
       <nav className="slt-nav" aria-label="상단 메뉴">
         {onAcademy && (
           <button type="button" className="slt-nav-button" onClick={onAcademy}>
             <svg className="slt-nav-icon" aria-hidden="true"><use href="#sltIconAcademy"/></svg>
-            <span>학당</span>
+            <span>{academyLabel}</span>
           </button>
         )}
         {audioSettings}
+        {userLabel && <span className="slt-user-label">{userLabel}</span>}
       </nav>
     </header>
   );

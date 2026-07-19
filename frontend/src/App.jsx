@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AdminLoginView } from "./views/AdminLoginView.jsx";
-import { LibraryView } from "./views/LibraryView.jsx";
+import { CheckpointIntroView } from "./views/CheckpointIntroView.jsx";
+import { ConceptCheckpointView } from "./views/ConceptCheckpointView.jsx";
+import { ContinueCourseView } from "./views/ContinueCourseView.jsx";
+import { CourseCompletionView } from "./views/CourseCompletionView.jsx";
 import { RoadmapView } from "./views/RoadmapView.jsx";
 import { StartView } from "./views/StartView.jsx";
 import { StudyView } from "./views/StudyView.jsx";
+import { TitleView } from "./views/TitleView.jsx";
 import { AudioSettings } from "./components/TopBar.jsx";
 import { SvgDefs } from "./components/Ornaments.jsx";
 import {
@@ -22,6 +26,21 @@ import {
 import { request } from "./lib/api.js";
 import { storedVolume } from "./lib/storage.js";
 
+const DEFAULT_WEEK_COUNT = 13;
+
+function courseProgressPercent(courseObj) {
+  const stages = courseObj?.stages ?? [];
+  if (!stages.length) return 0;
+  const completedCount = stages.filter((stage) => stage.completed).length;
+  return Math.round((completedCount / stages.length) * 100);
+}
+
+function isCourseComplete(courseObj) {
+  const stages = courseObj?.stages ?? [];
+  const last = stages[stages.length - 1];
+  return Boolean(last && last.kind === "checkpoint" && last.completed);
+}
+
 export function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
     () => window.sessionStorage.getItem(ADMIN_AUTH_KEY) === "true",
@@ -34,6 +53,12 @@ export function App() {
   const [course, setCourse] = useState(null);
   const [courses, setCourses] = useState([]);
   const [selectedStage, setSelectedStage] = useState(null);
+  const [newCourseUploadMode, setNewCourseUploadMode] = useState(false);
+  const [showContinueList, setShowContinueList] = useState(false);
+  const [pendingCheckpoint, setPendingCheckpoint] = useState(null);
+  const [checkpointVariant, setCheckpointVariant] = useState(null);
+  const [courseSummary, setCourseSummary] = useState(null);
+  const [showCompletion, setShowCompletion] = useState(false);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -61,18 +86,31 @@ export function App() {
         setCourses(payload);
       })
       .catch((err) => setError(err.message));
+
     const sessionId = window.localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (!sessionId) return;
+    if (!existingCourseId && !sessionId) return;
     setBusy(true);
     Promise.all([
-      fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }),
+      sessionId ? fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }) : null,
       existingCourseId ? fetch(`${API_BASE}/api/courses/${encodeURIComponent(existingCourseId)}`) : null,
     ])
       .then(async ([sessionResponse, courseResponse]) => {
-        const sessionPayload = await sessionResponse.json().catch(() => ({}));
-        if (!sessionResponse.ok) throw new Error(sessionPayload.detail || "이전 학습 세션을 불러오지 못했습니다.");
-        if (courseResponse?.ok) setCourse(await courseResponse.json());
-        setState(sessionPayload);
+        let restoredCourse = null;
+        if (courseResponse?.ok) {
+          restoredCourse = await courseResponse.json();
+          setCourse(restoredCourse);
+        }
+        if (sessionResponse) {
+          const sessionPayload = await sessionResponse.json().catch(() => ({}));
+          if (!sessionResponse.ok) throw new Error(sessionPayload.detail || "이전 학습 세션을 불러오지 못했습니다.");
+          if (sessionPayload.session_mode === "concept_review" && restoredCourse) {
+            const stage = restoredCourse.stages.find(
+              (item) => item.session_id === sessionPayload.session.session_id,
+            );
+            setCheckpointVariant(stage?.checkpoint_type === "midterm" ? "feynman" : "plain");
+          }
+          setState(sessionPayload);
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => setBusy(false));
@@ -90,27 +128,35 @@ export function App() {
     setAdminError("");
   }
 
-  async function createNewCourse() {
-    const title = window.prompt("새 학습 로드맵의 이름을 입력하세요.", "새 학습 로드맵");
-    if (title === null) return;
+  function beginNewCourseUpload() {
+    setFile(null); setError("");
+    setNewCourseUploadMode(true);
+    setShowContinueList(false);
+  }
+
+  async function submitSyllabus(event) {
+    event.preventDefault();
+    if (!file) { setError("강의계획서 PDF를 선택해주세요."); return; }
     setBusy(true); setError("");
     try {
-      const nextCourse = await request("/api/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim() || "새 학습 로드맵" }),
-      });
-      setCourses((current) => [nextCourse, ...current]);
-      window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
-      setCourse(nextCourse);
+      const payload = new FormData();
+      payload.append("pdf", file);
+      const newCourse = await request("/api/courses/from-syllabus", { method: "POST", body: payload });
+      setCourses((current) => [newCourse, ...current]);
+      window.localStorage.setItem(ACTIVE_COURSE_KEY, newCourse.course_id);
+      setCourse(newCourse);
+      setSelectedStage(null);
+      setNewCourseUploadMode(false);
+      setFile(null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
 
-  function openCourse(nextCourse) {
+  function openCourseFromContinue(nextCourse) {
     window.localStorage.setItem(ACTIVE_COURSE_KEY, nextCourse.course_id);
     setCourse(nextCourse);
     setSelectedStage(null);
+    setShowContinueList(false);
     setError("");
   }
 
@@ -132,22 +178,106 @@ export function App() {
     window.localStorage.removeItem(ACTIVE_COURSE_KEY);
     window.localStorage.removeItem(ACTIVE_SESSION_KEY);
     setCourse(null); setState(null); setSelectedStage(null); setAnswer(""); setError("");
+    setShowContinueList(true);
+    setShowCompletion(false); setCourseSummary(null);
+    setPendingCheckpoint(null); setCheckpointVariant(null);
   }
 
   async function refreshCourse() {
     const courseId = course?.course_id ?? window.localStorage.getItem(ACTIVE_COURSE_KEY);
-    if (!courseId) return;
+    if (!courseId) return null;
     const nextCourse = await request(`/api/courses/${encodeURIComponent(courseId)}`);
     setCourse(nextCourse);
     setCourses((current) => current.map((item) => item.course_id === nextCourse.course_id ? nextCourse : item));
+    return nextCourse;
   }
 
   async function returnToRoadmap() {
     window.localStorage.removeItem(ACTIVE_SESSION_KEY);
     setState(null);
     setSelectedStage(null);
+    setCheckpointVariant(null);
     setAnswer("");
-    try { await refreshCourse(); } catch (err) { setError(err.message); }
+    try {
+      const nextCourse = await refreshCourse();
+      if (isCourseComplete(nextCourse)) {
+        const summary = await request(`/api/courses/${encodeURIComponent(nextCourse.course_id)}/summary`);
+        setCourseSummary(summary);
+        setShowCompletion(true);
+      }
+    } catch (err) { setError(err.message); }
+  }
+
+  function backToRoadmapFromCompletion() {
+    setShowCompletion(false);
+    setCourseSummary(null);
+  }
+
+  function backToTitleFromSyllabusUpload() {
+    window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setFile(null); setError("");
+    setCourse(null);
+    setSelectedStage(null);
+    setNewCourseUploadMode(false);
+    setShowContinueList(false);
+  }
+
+  function backFromWeekUpload() {
+    setFile(null); setError("");
+    setSelectedStage(null);
+  }
+
+  function openExistingSession(sessionId, checkpointType) {
+    setBusy(true); setError("");
+    request(`/api/sessions/${encodeURIComponent(sessionId)}`)
+      .then((next) => {
+        window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+        setCheckpointVariant(checkpointType === "midterm" ? "feynman" : checkpointType === "final" ? "plain" : null);
+        setDismissedTransitionAnswerId(null);
+        setState(next);
+        setAnswer("");
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setBusy(false));
+  }
+
+  async function startCheckpoint(stage) {
+    if (!course) return;
+    setBusy(true); setError("");
+    try {
+      const next = await request(
+        `/api/courses/${encodeURIComponent(course.course_id)}/checkpoints/${stage.stage_index}`,
+        { method: "POST" },
+      );
+      window.localStorage.setItem(ACTIVE_SESSION_KEY, next.session.session_id);
+      setCheckpointVariant(stage.checkpoint_type === "midterm" ? "feynman" : "plain");
+      setPendingCheckpoint(null);
+      setState(next);
+      setAnswer("");
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  function openRoadmapStage(stage) {
+    setError("");
+    if (stage.kind === "week") {
+      if (stage.session_id) {
+        openExistingSession(stage.session_id, null);
+      } else {
+        setSelectedStage(stage);
+      }
+      return;
+    }
+    if (stage.session_id) {
+      openExistingSession(stage.session_id, stage.checkpoint_type);
+      return;
+    }
+    if (stage.checkpoint_type === "midterm") {
+      setPendingCheckpoint(stage);
+    } else {
+      startCheckpoint(stage);
+    }
   }
 
   useEffect(() => {
@@ -270,6 +400,9 @@ export function App() {
             setState(evt.payload);
             window.localStorage.setItem(ACTIVE_SESSION_KEY, evt.payload.session.session_id);
             setAnswer("");
+            if (course?.course_id) {
+              refreshCourse().catch(() => {});
+            }
           } else if (evt.step === "error") {
             throw new Error(evt.message);
           }
@@ -280,20 +413,6 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function startFinalReview() {
-    if (!course) return;
-    setBusy(true); setError("");
-    try {
-      const next = course.final_review_session_id
-        ? await request(`/api/sessions/${encodeURIComponent(course.final_review_session_id)}`)
-        : await request(`/api/courses/${encodeURIComponent(course.course_id)}/final-review`, { method: "POST" });
-      window.localStorage.setItem(ACTIVE_SESSION_KEY, next.session.session_id);
-      setState(next);
-      setAnswer("");
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
   }
 
   function selectPdf(event) {
@@ -363,17 +482,75 @@ export function App() {
   }
 
   if (!state && !course) {
+    if (newCourseUploadMode) {
+      return (
+        <>
+          <SvgDefs/>
+          <StartView
+            audioSettings={audioSettings}
+            busy={busy}
+            error={error}
+            file={file}
+            loadingSteps={loadingSteps}
+            mode="syllabus"
+            onBack={backToTitleFromSyllabusUpload}
+            onFileChange={selectPdf}
+            onSubmit={submitSyllabus}
+          />
+        </>
+      );
+    }
     return (
       <>
         <SvgDefs/>
-        <LibraryView
+        {showContinueList ? (
+          <ContinueCourseView
+            audioSettings={audioSettings}
+            busy={busy}
+            courses={courses}
+            error={error}
+            onBack={() => setShowContinueList(false)}
+            onOpenCourse={openCourseFromContinue}
+          />
+        ) : (
+          <TitleView
+            audioSettings={audioSettings}
+            busy={busy}
+            error={error}
+            onStartNew={beginNewCourseUpload}
+            onContinue={() => setShowContinueList(true)}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (showCompletion) {
+    return (
+      <>
+        <SvgDefs/>
+        <CourseCompletionView
           audioSettings={audioSettings}
-          courses={courses}
-          error={error}
           busy={busy}
-          onCreateCourse={createNewCourse}
-          onOpenCourse={openCourse}
-          onDeleteCourse={deleteCourse}
+          course={course}
+          summary={courseSummary}
+          onReturnToRoadmap={backToRoadmapFromCompletion}
+        />
+      </>
+    );
+  }
+
+  if (pendingCheckpoint) {
+    return (
+      <>
+        <SvgDefs/>
+        <CheckpointIntroView
+          audioSettings={audioSettings}
+          busy={busy}
+          course={course}
+          progress={courseProgressPercent(course)}
+          onLater={() => setPendingCheckpoint(null)}
+          onStart={() => startCheckpoint(pendingCheckpoint)}
         />
       </>
     );
@@ -389,16 +566,7 @@ export function App() {
           course={course}
           error={error}
           onBack={returnToLibrary}
-          onStageOpen={(sessionId) => {
-            request(`/api/sessions/${sessionId}`)
-              .then((next) => {
-                window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-                setState(next);
-              })
-              .catch((err) => setError(err.message));
-          }}
-          onStartFinalReview={startFinalReview}
-          onSelectStage={setSelectedStage}
+          onOpenStage={openRoadmapStage}
         />
       </>
     );
@@ -413,21 +581,39 @@ export function App() {
           busy={busy}
           error={error}
           file={file}
-          form={form}
           loadingSteps={loadingSteps}
-          onDifficultyChange={(value) => setForm({ ...form, difficulty: value })}
+          mode="week"
+          selectedStage={selectedStage}
+          onBack={backFromWeekUpload}
           onFileChange={selectPdf}
           onSubmit={startSession}
-          selectedStage={selectedStage}
+        />
+      </>
+    );
+  }
+
+  if (state.session_mode === "concept_review") {
+    return (
+      <>
+        <SvgDefs/>
+        <ConceptCheckpointView
+          audioSettings={audioSettings}
+          answer={answer}
+          busy={busy}
+          course={course}
+          onAcademy={returnToRoadmap}
+          onAnswerChange={setAnswer}
+          onSubmitAnswer={submitAnswer}
+          progress={courseProgressPercent(course)}
+          state={state}
+          variant={checkpointVariant ?? "plain"}
         />
       </>
     );
   }
 
   const concepts = state?.session?.concepts ?? [];
-  const answers = state?.session_mode === "concept_review"
-    ? (state?.session?.concept_answers ?? [])
-    : (state?.session?.answers ?? []);
+  const answers = state?.session?.answers ?? [];
   const currentQuestion = state?.current_question;
   const questionText = state.completed
     ? "오늘의 학습 여정이 끝났네. 기록서를 살펴보게."
@@ -442,6 +628,8 @@ export function App() {
         answers={answers}
         busy={busy}
         concepts={concepts}
+        courseProgress={courseProgressPercent(course)}
+        courseTitle={course?.title}
         currentQuestion={currentQuestion}
         dismissedTransitionAnswerId={dismissedTransitionAnswerId}
         onAcademy={returnToRoadmap}
@@ -455,5 +643,5 @@ export function App() {
         answer={answer}
       />
     </>
-    );
-  }
+  );
+}

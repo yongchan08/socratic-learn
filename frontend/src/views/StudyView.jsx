@@ -2,7 +2,14 @@ import { Loader2, Send } from "lucide-react";
 import { ScreenShell } from "../components/ScreenShell.jsx";
 import { SsbBC, SrpCorners, SlpCorners } from "../components/Ornaments.jsx";
 import { TopBar } from "../components/TopBar.jsx";
+import { WeekReportModal } from "../components/WeekReportModal.jsx";
 import { MAX_ATTEMPTS_PER_QUESTION } from "../constants.js";
+
+function studySecondsFor(session) {
+  if (!session?.started_at || !session?.ended_at) return null;
+  const seconds = (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000;
+  return Number.isFinite(seconds) ? seconds : null;
+}
 
 function getAdviceText(evaluation) {
   if (!evaluation || evaluation.status === "sufficient") return null;
@@ -24,6 +31,8 @@ export function StudyView({
   answers,
   busy,
   concepts,
+  courseProgress,
+  courseTitle,
   currentQuestion,
   dismissedTransitionAnswerId,
   onAcademy,
@@ -36,16 +45,10 @@ export function StudyView({
   state,
   answer,
 }) {
-  const isConceptReview = state?.session_mode === "concept_review";
   const lastAnswer = state?.last_answer;
-  const answeredQuestion = lastAnswer
-    ? state?.session?.questions?.find((question) => question.question_id === lastAnswer.question_id)
-    : null;
   const lastAnswerIsForCurrentQuestion = lastAnswer?.question_id === currentQuestion?.question_id;
-  const showFollowupEvaluation = !isConceptReview &&
-    lastAnswer?.evaluation && lastAnswerIsForCurrentQuestion && lastAnswer.evaluation.status !== "sufficient";
-  const showTransitionEvaluation = !isConceptReview &&
-    lastAnswer?.evaluation && lastAnswer.evaluation.next_action === "next_question" &&
+  const showFollowupEvaluation = lastAnswer?.evaluation && lastAnswerIsForCurrentQuestion && lastAnswer.evaluation.status !== "sufficient";
+  const showTransitionEvaluation = lastAnswer?.evaluation && lastAnswer.evaluation.next_action === "next_question" &&
     lastAnswer.answer_text !== "/skip" && !lastAnswerIsForCurrentQuestion &&
     dismissedTransitionAnswerId !== lastAnswer.answer_id;
   const showEvaluationMessage = Boolean(showTransitionEvaluation || (!state?.completed && showFollowupEvaluation));
@@ -53,11 +56,22 @@ export function StudyView({
     ? (lastAnswer?.attempt_number ?? 0)
     : answers.filter((item) => item.question_id === currentQuestion?.question_id).length;
   const adviceText = showEvaluationMessage ? getAdviceText(lastAnswer?.evaluation) : null;
+  const showWeekReport = state.completed && Boolean(state.session.summary);
 
   return (
+    <>
     <ScreenShell
       className=""
-      topBar={<TopBar onAcademy={onAcademy} audioSettings={audioSettings}/>}
+      topBar={
+        <TopBar
+          onAcademy={onAcademy}
+          academyLabel="로드맵 보기"
+          audioSettings={audioSettings}
+          courseTitle={courseTitle}
+          progressPercent={courseProgress}
+          userLabel="지혜를 찾는 자"
+        />
+      }
       backgroundContent={
         <div className="study-socrates">
           <img src="/theme-assets/socrates.png" alt="AI 소크라테스"/>
@@ -175,12 +189,10 @@ export function StudyView({
                   <form onSubmit={onSubmitAnswer}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                       <h2 className="srp-answer-title" id="answer-card-title">그대의 답변을 입력하세요.</h2>
-                      <span className="attempt-badge">
-                        {isConceptReview ? `개념 ${state.current_index + 1} / ${state.total_questions}` : `시도 ${visibleAttemptCount} / ${MAX_ATTEMPTS_PER_QUESTION}`}
-                      </span>
+                      <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
                     </div>
                     <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
-                    <p className="srp-answer-copy">완벽하지 않아도 괜찮습니다.<br/>{isConceptReview ? "이 개념에 대해 이해한 내용을 자유롭게 적어보세요." : "생각을 드러내는 것이 먼저입니다."}</p>
+                    <p className="srp-answer-copy">완벽하지 않아도 괜찮습니다.<br/>생각을 드러내는 것이 먼저입니다.</p>
                     <label className="srp-textarea-shell">
                       <span className="visually-hidden">답변 입력</span>
                       <textarea
@@ -205,81 +217,39 @@ export function StudyView({
                   </form>
                 )}
 
-                {showTransitionEvaluation && answeredQuestion && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <h2 className="srp-answer-title">이전 답변 평가</h2>
-                      <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
-                    </div>
-                    <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
-                    <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(0,0,0,0.06)", borderRadius: 4, borderLeft: "2px solid rgba(99,75,42,.4)" }}>
-                      <p style={{ margin: "0 0 4px", color: "#5b4020", fontSize: 14, fontWeight: 760, letterSpacing: "0.04em" }}>질문</p>
-                      <p style={{ margin: 0, color: "#3a260f", fontSize: 16, lineHeight: 1.58, fontWeight: 620 }}>{answeredQuestion.question}</p>
-                    </div>
-                  </div>
-                )}
-
-                {state.completed && state.session.summary && (
-                  <>
-                    <h2 className="srp-summary-title">학습 기록서</h2>
-                    <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
-                    {state.session.completion_status === "ended_early" && (
-                      <p className="srp-muted">학습이 조기 종료되어 미응답 항목은 평가에서 제외되었습니다.</p>
-                    )}
-                    <p className="srp-summary-text">{state.session.summary.overall_feedback}</p>
-                    {state.session.summary.unanswered_concepts?.length > 0 && (
-                      <div className="srp-summary-section">
-                        <h3>평가하지 않은 개념</h3>
-                        <ul>{state.session.summary.unanswered_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
+                {showTransitionEvaluation && (() => {
+                  const answeredQuestion = state?.session?.questions?.find(
+                    (question) => question.question_id === lastAnswer.question_id,
+                  );
+                  if (!answeredQuestion) return null;
+                  return (
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                        <h2 className="srp-answer-title">이전 답변 평가</h2>
+                        <span className="attempt-badge">시도 {visibleAttemptCount} / {MAX_ATTEMPTS_PER_QUESTION}</span>
                       </div>
-                    )}
-                    <div className="srp-summary-section">
-                      <h3>강한 개념</h3>
-                      {state.session.summary.strong_concepts.length
-                        ? <ul>{state.session.summary.strong_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
-                        : <p className="srp-muted">기록 없음</p>}
-                    </div>
-                    {state.session_mode === "concept_review" && (
-                      <div className="srp-summary-section">
-                        <h3>개념별 필수 요소 리포트</h3>
-                        {concepts.map((concept) => (
-                          <div key={concept.concept_id} style={{ marginBottom: 14 }}>
-                            <strong>{concept.title}</strong>
-                            {state.session.questions.filter((question) => question.concept_id === concept.concept_id).map((question) => {
-                              const result = state.session.answers.find((item) => item.question_id === question.question_id);
-                              if (!result) {
-                                return (
-                                  <div key={question.question_id} style={{ marginTop: 8 }}>
-                                    <p className="srp-muted">{question.question_type}</p>
-                                    <p className="srp-muted">평가하지 않음</p>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div key={question.question_id} style={{ marginTop: 8 }}>
-                                  <p className="srp-muted">{question.question_type}</p>
-                                  <p>충족: {result?.evaluation?.matched_points?.join(", ") || "없음"}</p>
-                                  <p>미충족: {result?.evaluation?.missing_points?.join(", ") || "없음"}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
+                      <svg className="srp-divider" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true"><use href="#srpDivider"/></svg>
+                      <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(0,0,0,0.06)", borderRadius: 4, borderLeft: "2px solid rgba(99,75,42,.4)" }}>
+                        <p style={{ margin: "0 0 4px", color: "#5b4020", fontSize: 14, fontWeight: 760, letterSpacing: "0.04em" }}>질문</p>
+                        <p style={{ margin: 0, color: "#3a260f", fontSize: 16, lineHeight: 1.58, fontWeight: 620 }}>{answeredQuestion.question}</p>
                       </div>
-                    )}
-                    <div className="srp-summary-section">
-                      <h3>복습 개념</h3>
-                      {state.session.summary.weak_concepts.length
-                        ? <ul>{state.session.summary.weak_concepts.map((item) => <li key={item}>{item}</li>)}</ul>
-                        : <p className="srp-muted">기록 없음</p>}
                     </div>
-                  </>
-                )}
+                  );
+                })()}
               </div>
             </section>
           </div>
         </div>
       </div>
     </ScreenShell>
+    {showWeekReport && (
+      <WeekReportModal
+        session={state.session}
+        subtitle="학습 완료"
+        studySeconds={studySecondsFor(state.session)}
+        onReturnToRoadmap={onAcademy}
+      />
+    )}
+    </>
   );
 }
