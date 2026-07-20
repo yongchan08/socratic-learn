@@ -50,6 +50,7 @@ class AnswerRequest(BaseModel):
 
 class CourseRequest(BaseModel):
     title: str | None = Field(default=None, max_length=100)
+    week_count: int | None = Field(default=None, ge=1, le=52)
 
 
 @app.get("/api/courses")
@@ -63,9 +64,37 @@ def list_courses() -> list[dict]:
 @app.post("/api/courses")
 def create_course(request: CourseRequest | None = None) -> dict:
     try:
-        return manager.create_course(request.title if request else None)
+        return manager.create_course(
+            request.title if request else None,
+            week_count=(request.week_count if request and request.week_count else 13),
+        )
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/courses/from-syllabus")
+def create_course_from_syllabus(
+    pdf: UploadFile = File(),
+    title: str | None = Form(None),
+) -> dict:
+    if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
+    ensure_dir(UPLOAD_DIR)
+    target = upload_target(pdf.filename)
+    try:
+        save_validated_pdf_upload(pdf, target)
+    except Exception:
+        remove_uploaded_pdf(target)
+        raise
+
+    try:
+        return manager.create_course_from_syllabus(target, title=title)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=format_pipeline_error(exc)) from exc
+    finally:
+        remove_uploaded_pdf(target)
 
 
 @app.get("/api/courses/{course_id}")
@@ -84,13 +113,35 @@ def delete_course(course_id: str) -> None:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/api/courses/{course_id}/final-review")
-def create_course_review(course_id: str) -> dict:
+@app.post("/api/courses/{course_id}/checkpoints/{stage_index}")
+def create_checkpoint(course_id: str, stage_index: int) -> dict:
     try:
-        session = manager.create_course_review(course_id)
+        session = manager.create_checkpoint_review(course_id, stage_index)
         return manager.snapshot(session.session_id)
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/courses/{course_id}/final-review")
+def create_course_review(course_id: str) -> dict:
+    """이전 프론트엔드와의 호환을 위한 경로. 로드맵의 마지막 체크포인트를 연다."""
+    try:
+        course = manager.get_course(course_id)
+        checkpoints = [stage for stage in course.get("stages", []) if stage.get("kind") == "checkpoint"]
+        if not checkpoints:
+            raise WebStudyError("학습 로드맵에 개념 리포트 단계가 없습니다.")
+        session = manager.create_checkpoint_review(course_id, checkpoints[-1]["stage_index"])
+        return manager.snapshot(session.session_id)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/courses/{course_id}/summary")
+def course_summary(course_id: str) -> dict:
+    try:
+        return manager.get_course_summary(course_id)
+    except WebStudyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/health")

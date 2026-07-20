@@ -360,6 +360,39 @@ Rules:
     return system_prompt, user_prompt
 
 
+def build_syllabus_extraction_prompt(markdown: str, output_language: str = "ko") -> tuple[str, str]:
+    language_name = _language_name(output_language)
+    system_prompt = (
+        "You are an assistant that reads a university course syllabus and extracts its weekly schedule.\n"
+        "Identify each teaching week's topic as a short concept phrase suitable for a learning roadmap.\n"
+        "Return valid JSON only."
+    )
+    user_prompt = f"""Syllabus material:
+{markdown}
+
+Output language:
+{language_name}
+
+Return JSON in this exact shape:
+
+{{
+  "weeks": [
+    {{ "week_number": 1, "topic": "string" }}
+  ]
+}}
+
+Rules:
+- Extract one entry per teaching week found in the syllabus, in week order.
+- topic must be a short concept phrase (roughly 2-8 words), not a full sentence, naming what that week covers.
+- If the syllabus explicitly marks a week as a midterm exam, final exam, or has no real lecture content, skip that week entirely.
+- Do not invent weeks that are not present in the syllabus.
+- Do not duplicate the same topic across multiple weeks.
+- Generate all topic text in Korean if output_language is "ko", in English if "en".
+- Return JSON only.
+"""
+    return system_prompt, user_prompt
+
+
 def _language_name(output_language: str) -> str:
     if output_language == "ko":
         return 'Korean (output_language is "ko")'

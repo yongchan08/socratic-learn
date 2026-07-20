@@ -10,7 +10,7 @@ from .config import MAX_CONCEPTS, QUESTIONS_PER_CONCEPT, AppConfig
 from .llm_client import LLMClient
 from .models import Concept, ConceptReviewReport, ParsedDocument, Question, StudySession
 from .pdf_parser import parse_pdf_to_markdown
-from .prompts import build_concept_extraction_prompt, build_question_generation_prompt
+from .prompts import build_concept_extraction_prompt, build_question_generation_prompt, build_syllabus_extraction_prompt
 from .renderer import console, print_concepts, print_header, print_required_points_report, print_session_summary, print_warning
 from .session import generate_session_summary, run_concept_review_session, run_interactive_session
 from .storage import cache_path, compute_file_hash, ensure_dir, legacy_cache_path, load_json, save_json, save_text
@@ -161,6 +161,19 @@ def parse_or_load_pdf(config: AppConfig, material_store: object | None = None) -
     save_text(doc.markdown, output_dir / f"parsed_{doc.document_id}.md")
     save_json(doc, output_dir / f"parsed_{doc.document_id}.json")
     return doc, file_hash
+
+
+def extract_syllabus_weeks(markdown: str, config: AppConfig, llm_client: object) -> list[str]:
+    """강의계획서 본문에서 주차별 학습 주제를 순서대로 추출합니다."""
+    system_prompt, user_prompt = build_syllabus_extraction_prompt(markdown, config.output_language)
+    payload = llm_client.complete_json(system_prompt, user_prompt)
+    raw_weeks = payload.get("weeks", [])
+    topics: list[str] = []
+    for item in raw_weeks:
+        topic = str(item.get("topic") or "").strip()
+        if topic:
+            topics.append(topic)
+    return topics
 
 
 def extract_or_load_concepts(

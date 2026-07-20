@@ -205,11 +205,14 @@ def test_typed_skip_uses_fixed_skip_evaluation_without_llm(monkeypatch):
     assert session.completion_status == "completed"
 
 
-def test_course_review_namespaces_concepts_and_questions(monkeypatch):
+def test_checkpoint_review_namespaces_concepts_and_questions(monkeypatch):
     store = FakeStore()
     manager = WebStudyManager(session_store=store)
-    course = manager.create_course()
-    for index, stage in enumerate(course["stages"], start=1):
+    course = manager.create_course(week_count=4)
+    week_stages = [stage for stage in course["stages"] if stage["kind"] == "week"]
+    checkpoint = next(stage for stage in course["stages"] if stage["kind"] == "checkpoint")
+    source_indexes = checkpoint["source_stage_indexes"]
+    for index, stage in enumerate(week_stages[: len(source_indexes)], start=1):
         session = _session().model_copy(update={
             "session_id": f"session_stage_{index}",
             "document_id": f"doc_{index}",
@@ -228,15 +231,101 @@ def test_course_review_namespaces_concepts_and_questions(monkeypatch):
     store.save_course(course)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    review = manager.create_course_review(course["course_id"])
+    review = manager.create_checkpoint_review(course["course_id"], checkpoint["stage_index"])
 
     assert [concept.concept_id for concept in review.concepts] == [
-        "stage_1_concept_001", "stage_2_concept_001", "stage_3_concept_001"
+        f"stage_{source_indexes[0]}_concept_001", f"stage_{source_indexes[1]}_concept_001"
     ]
     assert [question.question_id for question in review.questions] == [
-        "stage_1_q_001_001", "stage_2_q_001_001", "stage_3_q_001_001"
+        f"stage_{source_indexes[0]}_q_001_001", f"stage_{source_indexes[1]}_q_001_001"
     ]
-    assert review.questions[1].concept_id == "stage_2_concept_001"
+    assert review.questions[1].concept_id == f"stage_{source_indexes[1]}_concept_001"
+
+
+def test_checkpoint_review_reopens_existing_session_without_regenerating(monkeypatch):
+    store = FakeStore()
+    manager = WebStudyManager(session_store=store)
+    course = manager.create_course(week_count=2)
+    checkpoint = next(stage for stage in course["stages"] if stage["kind"] == "checkpoint")
+    checkpoint["session_id"] = "existing_checkpoint_session"
+    store.save_course(course)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    existing_review = _session().model_copy(update={"session_id": "existing_checkpoint_session"})
+    store.stored["existing_checkpoint_session"] = StoredWebSession(
+        session=existing_review,
+        current_index=0,
+        session_mode="concept_review",
+        document_title="중간고사",
+        config={"model": "test-model"},
+    )
+
+    review = manager.create_checkpoint_review(course["course_id"], checkpoint["stage_index"])
+
+    assert review.session_id == "existing_checkpoint_session"
+
+
+def test_create_course_from_syllabus_names_week_stages_from_extracted_topics(monkeypatch, tmp_path):
+    from socratic_tutor.models import ParsedDocument
+
+    manager = WebStudyManager(session_store=FakeStore())
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    parsed_doc = ParsedDocument(
+        document_id="doc_syllabus",
+        source_path="syllabus.pdf",
+        title="자료구조와 알고리즘",
+        markdown="1주차: 배열과 리스트\n2주차: 스택과 큐\n중간고사\n3주차: 트리",
+        pages=[],
+        created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.parse_or_load_pdf",
+        lambda config, material_store=None: (parsed_doc, "file_hash"),
+    )
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.extract_syllabus_weeks",
+        lambda markdown, config, llm_client: ["배열과 리스트", "스택과 큐", "트리"],
+    )
+
+    course = manager.create_course_from_syllabus(tmp_path / "syllabus.pdf")
+
+    assert course["title"] == "자료구조와 알고리즘"
+    assert course["week_count"] == 3
+    week_titles = [stage["title"] for stage in course["stages"] if stage["kind"] == "week"]
+    assert week_titles == ["배열과 리스트", "스택과 큐", "트리"]
+    checkpoint_titles = [stage["title"] for stage in course["stages"] if stage["kind"] == "checkpoint"]
+    assert checkpoint_titles == ["중간고사", "기말고사"]
+
+
+def test_create_course_from_syllabus_rejects_when_no_topics_found(monkeypatch, tmp_path):
+    from socratic_tutor.models import ParsedDocument
+    from socratic_tutor.web_service import WebStudyError
+
+    manager = WebStudyManager(session_store=FakeStore())
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    parsed_doc = ParsedDocument(
+        document_id="doc_syllabus",
+        source_path="syllabus.pdf",
+        title="빈 강의계획서",
+        markdown="내용 없음",
+        pages=[],
+        created_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.parse_or_load_pdf",
+        lambda config, material_store=None: (parsed_doc, "file_hash"),
+    )
+    monkeypatch.setattr(
+        "socratic_tutor.web_service.extract_syllabus_weeks",
+        lambda markdown, config, llm_client: [],
+    )
+
+    try:
+        manager.create_course_from_syllabus(tmp_path / "syllabus.pdf")
+        assert False, "expected WebStudyError"
+    except WebStudyError:
+        pass
 
 
 def test_lists_multiple_courses_and_preserves_titles():
