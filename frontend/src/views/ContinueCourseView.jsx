@@ -24,7 +24,7 @@ export function ContinueCourseView({ audioSettings, busy, courses, error, onBack
   return (
     <ScreenShell
       className="continue-bg"
-      topBar={<TopBar audioSettings={audioSettings} userLabel="지혜를 찾는 자"/>}
+      topBar={<TopBar audioSettings={audioSettings}/>}
     >
       <main className="ctn-shell">
         <section className="ctn-card">

@@ -41,7 +41,6 @@ export function StartView({
           audioSettings={audioSettings}
           onAcademy={onBack}
           academyLabel={isWeekMode ? "로드맵으로" : "메인으로"}
-          userLabel="지혜를 찾는 자"
         />
       }
     >

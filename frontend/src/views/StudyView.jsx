@@ -69,7 +69,6 @@ export function StudyView({
           audioSettings={audioSettings}
           courseTitle={courseTitle}
           progressPercent={courseProgress}
-          userLabel="지혜를 찾는 자"
         />
       }
       backgroundContent={

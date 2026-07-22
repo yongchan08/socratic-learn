@@ -117,14 +117,14 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .slt-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .slt-edge {
-  position: absolute; left: 36px; right: 36px; height: 1px; z-index: 4;
+  position: absolute; left: 16px; right: 16px; height: 1px; z-index: 4;
   background: linear-gradient(90deg, transparent 0%, #33200d 2%, var(--gold-low) 4%, var(--gold) 8%, var(--gold-hi) 14%, #7e612f 24%, #4e3619 52%, var(--gold) 80%, var(--gold-hi) 90%, #33200d 98%, transparent 100%);
   box-shadow: 0 0 2px rgba(151,114,58,.18), 0 1px 0 rgba(0,0,0,.8);
 }
 .slt-edge--top { top: 5px; }
 .slt-edge--bottom { bottom: 5px; }
 .slt-hairline {
-  position: absolute; left: 40px; right: 40px; height: 1px; z-index: 4; opacity: .44;
+  position: absolute; left: 16px; right: 16px; height: 1px; z-index: 4; opacity: .44;
   background: linear-gradient(90deg, transparent, #9d7d4d 8%, #4d3518 50%, #9d7d4d 92%, transparent);
 }
 .slt-hairline--top { top: 8px; }
@@ -144,7 +144,7 @@ h1, h2, h3, p { margin-top: 0; }
   -webkit-font-smoothing: antialiased;
 }
 .slt-nav {
-  position: absolute; z-index: 8; top: 0; right: 82px; height: 100%;
+  position: absolute; z-index: 8; top: 0; right: 34px; height: 100%;
   display: flex; align-items: center; justify-content: flex-end; gap: 14px;
 }
 .slt-nav-button {

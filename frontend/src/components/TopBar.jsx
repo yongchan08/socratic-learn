@@ -1,6 +1,6 @@
 import { Settings } from "lucide-react";
 
-export function TopBar({ onAcademy, academyLabel = "학당", audioSettings, courseTitle, progressPercent, userLabel }) {
+export function TopBar({ onAcademy, academyLabel = "학당", audioSettings, courseTitle, progressPercent }) {
   const showCourseBlock = Boolean(courseTitle) || typeof progressPercent === "number";
   return (
     <header className="slt-topbar" role="banner">
@@ -8,9 +8,6 @@ export function TopBar({ onAcademy, academyLabel = "학당", audioSettings, cour
       <span className="slt-edge slt-edge--bottom" aria-hidden="true"/>
       <span className="slt-hairline slt-hairline--top" aria-hidden="true"/>
       <span className="slt-hairline slt-hairline--bottom" aria-hidden="true"/>
-      <svg className="slt-corner slt-corner--left" aria-hidden="true" focusable="false"><use href="#sltCorner"/></svg>
-      <svg className="slt-corner slt-corner--right" aria-hidden="true" focusable="false"><use href="#sltCorner"/></svg>
-      <h1 className="slt-title">Socratic Lecture Tutor</h1>
       {showCourseBlock && (
         <div className="slt-course" aria-label="현재 학습 진행 상태">
           {courseTitle && <span className="slt-course-title">{courseTitle}</span>}
@@ -32,7 +29,6 @@ export function TopBar({ onAcademy, academyLabel = "학당", audioSettings, cour
           </button>
         )}
         {audioSettings}
-        {userLabel && <span className="slt-user-label">{userLabel}</span>}
       </nav>
     </header>
   );

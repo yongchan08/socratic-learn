@@ -38,7 +38,6 @@ export function RoadmapView({
           audioSettings={audioSettings}
           courseTitle={course?.title}
           progressPercent={progress}
-          userLabel="지혜를 찾는 자"
         />
       }
     >
