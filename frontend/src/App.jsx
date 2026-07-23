@@ -187,6 +187,22 @@ export function App() {
     setPendingCheckpoint(null); setCheckpointVariant(null);
   }
 
+  function returnToMain() {
+    window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setCourse(null);
+    setState(null);
+    setSelectedStage(null);
+    setAnswer("");
+    setError("");
+    setShowContinueList(false);
+    setShowCompletion(false);
+    setCourseSummary(null);
+    setPendingCheckpoint(null);
+    setCheckpointVariant(null);
+    setNewCourseUploadMode(false);
+  }
+
   async function refreshCourse() {
     const courseId = course?.course_id ?? window.localStorage.getItem(ACTIVE_COURSE_KEY);
     if (!courseId) return null;
@@ -546,10 +562,9 @@ export function App() {
         {showContinueList ? (
           <ContinueCourseView
             audioSettings={audioSettings}
-            busy={busy}
             courses={courses}
             error={error}
-            onBack={() => setShowContinueList(false)}
+            onMain={returnToMain}
             onOpenCourse={openCourseFromContinue}
           />
         ) : (

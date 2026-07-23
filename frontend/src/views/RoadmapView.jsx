@@ -9,13 +9,13 @@ function stageStatus(stage, position, stages) {
 }
 
 function stageIconMeta(stage, status, index, stages) {
-  if (status === "complete") return { src: "/theme-assets/roadmap_icon/check.png", kind: "check" };
   if (stage.kind === "checkpoint") {
     if (stage.checkpoint_type === "midterm") {
       return { src: "/theme-assets/roadmap_icon/midle_test.png", kind: "midle-test" };
     }
     return { src: "/theme-assets/roadmap_icon/final_test.png", kind: "final-test" };
   }
+  if (status === "complete") return { src: "/theme-assets/roadmap_icon/check.png", kind: "check" };
   if (status === "locked") return { src: "/theme-assets/roadmap_icon/lock.png", kind: "lock" };
   if (status === "active") return { src: "/theme-assets/roadmap_icon/study.png", kind: "study" };
   if (index === stages.length - 1) return { src: "/theme-assets/roadmap_icon/fin.png", kind: "fin" };
