@@ -1,4 +1,4 @@
-import { AlertTriangle, FileUp, GraduationCap, Loader2 } from "lucide-react";
+import { AlertTriangle, GraduationCap, Loader2 } from "lucide-react";
 import { ScreenShell } from "../components/ScreenShell.jsx";
 import { TopBar } from "../components/TopBar.jsx";
 
@@ -66,6 +66,15 @@ export function RoadmapView({
   const totalNodes = stages.length + 1;
   const progress = totalNodes ? Math.round(((completed + (completed >= stages.length && stages.length > 0 ? 1 : 0)) / totalNodes) * 100) : 0;
   const nextStage = stages.find((stage, index) => stageStatus(stage, index, stages) === "active");
+  const ribbonLabel = nextStage ? nextStage.title : "학습 진행";
+  const ribbonStyle = fitRoadmapText(ribbonLabel, {
+    baseSize: 18,
+    minSize: 12.5,
+    threshold: 8,
+    shrinkStep: 0.48,
+    lineHeight: 1.16,
+    maxWidth: "100%",
+  });
   const rowCount = 3;
   const columnsPerRow = 7;
 
@@ -178,8 +187,8 @@ export function RoadmapView({
 
         <aside className="rmw-side">
           <div className="slp-panel slp-panel--lessons rmw-context">
-            <div className="parch-stage-ribbon parch-stage-ribbon--right">
-              {nextStage ? (nextStage.kind === "checkpoint" ? `${nextStage.title}` : `${nextStage.title}`) : "학습 진행"}
+            <div className="parch-stage-ribbon parch-stage-ribbon--right" title={ribbonLabel}>
+              <span style={ribbonStyle}>{ribbonLabel}</span>
             </div>
             {nextStage ? (
               nextStage.kind === "week" ? (
@@ -188,9 +197,8 @@ export function RoadmapView({
                   <p className="parch-upload-desc">
                     공부할 강의 PDF를 제출하면 소크라테스가 두루마리를 해석하여 핵심 개념을 찾아냅니다.
                   </p>
-                  <button type="button" className="srp-submit-button" disabled={busy} onClick={() => onUploadStagePdf(nextStage)}>
-                    <svg className="srp-submit-frame" viewBox="0 0 360 58" preserveAspectRatio="none" aria-hidden="true"><use href="#srpSubmitFrame"/></svg>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}><FileUp size={17}/> PDF 업로드하러 가기</span>
+                  <button type="button" className="srp-submit-button srp-submit-button--basic" disabled={busy} onClick={() => onUploadStagePdf(nextStage)}>
+                    <span>PDF 업로드하러 가기</span>
                   </button>
                 </>
               ) : (

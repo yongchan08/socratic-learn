@@ -506,6 +506,24 @@ h1, h2, h3, p { margin-top: 0; }
   position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%;
   pointer-events: none; overflow: visible;
 }
+.srp-submit-button--basic {
+  width: min(280px, 100%);
+  height: 86px;
+  padding: 0;
+  background: url("/theme-assets/basic_button.png") center center / 100% 100% no-repeat;
+}
+.srp-submit-button--basic span {
+  z-index: 1;
+  transform: none;
+  color: #eadfc7;
+  font-size: 18px;
+  font-weight: 780;
+  text-shadow: 0 1px 0 rgba(255,248,222,.25);
+  white-space: nowrap;
+}
+.srp-submit-button--basic:hover {
+  filter: brightness(1.04);
+}
 .srp-submit-button:hover { color: #fff2d4; filter: brightness(1.04); }
 .srp-submit-button:active { transform: translateY(1px); }
 .srp-submit-button:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -688,8 +706,19 @@ h1, h2, h3, p { margin-top: 0; }
   text-align: center;
   letter-spacing: -0.035em;
   text-shadow: 0 1px 0 #120b04;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  hyphens: none;
 }
 .parch-stage-ribbon--right { margin-bottom: 18px; }
+.parch-stage-ribbon--right span {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  hyphens: none;
+}
 
 .parch-error {
   padding: 8px 12px; border: 1px solid rgba(160,60,60,.50); border-radius: 2px;
