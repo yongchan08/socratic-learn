@@ -201,6 +201,7 @@ export function App() {
     setState(null);
     setSelectedStage(null);
     setCheckpointVariant(null);
+    setPendingCheckpoint(null);
     setAnswer("");
     try {
       const nextCourse = await refreshCourse();
@@ -589,7 +590,8 @@ export function App() {
           busy={busy}
           course={course}
           progress={courseProgressPercent(course)}
-          onLater={() => setPendingCheckpoint(null)}
+          onAcademy={returnToRoadmap}
+          onStartHover={playButtonHoverSound}
           onStart={() => startCheckpoint(pendingCheckpoint)}
         />
       </>
