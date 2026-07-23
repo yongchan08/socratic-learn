@@ -19,6 +19,79 @@ class StoredWebSession:
     config: dict[str, Any]
 
 
+class MemorySessionStore:
+    def __init__(self) -> None:
+        self._sessions: dict[str, StoredWebSession] = {}
+        self._documents: dict[str, ParsedDocument] = {}
+        self._materials: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._courses: dict[str, dict[str, Any]] = {}
+
+    def save(self, stored: StoredWebSession) -> None:
+        self._sessions[stored.session.session_id] = stored
+
+    def load(self, session_id: str) -> StoredWebSession | None:
+        return self._sessions.get(session_id)
+
+    def save_course(self, course: dict[str, Any]) -> None:
+        self._courses[course["course_id"]] = course
+
+    def load_course(self, course_id: str) -> dict[str, Any] | None:
+        return self._courses.get(course_id)
+
+    def list_courses(self) -> list[dict[str, Any]]:
+        return list(sorted(self._courses.values(), key=lambda item: item.get("updated_at", item.get("created_at", "")), reverse=True))
+
+    def delete_course(self, course_id: str) -> list[str] | None:
+        course = self._courses.pop(course_id, None)
+        if course is None:
+            return None
+        session_ids = [stage["session_id"] for stage in course.get("stages", []) if stage.get("session_id")]
+        if course.get("final_review_session_id"):
+            session_ids.append(course["final_review_session_id"])
+        for session_id in session_ids:
+            self._sessions.pop(session_id, None)
+        return session_ids
+
+    def save_document(self, file_hash: str, document: ParsedDocument) -> None:
+        self._documents[file_hash] = document
+
+    def load_document(self, file_hash: str) -> ParsedDocument | None:
+        return self._documents.get(file_hash)
+
+    def save_concepts(self, file_hash: str, difficulty: str, output_language: str, concepts: list[Concept]) -> None:
+        self._save_material_field(file_hash, difficulty, output_language, "concepts_data", concepts)
+
+    def load_concepts(self, file_hash: str, difficulty: str, output_language: str) -> list[Concept] | None:
+        payload = self._load_material_field(file_hash, difficulty, output_language, "concepts_data")
+        return [Concept.model_validate(item) for item in payload] if payload is not None else None
+
+    def save_questions(self, file_hash: str, difficulty: str, output_language: str, questions: list[Question]) -> None:
+        self._save_material_field(file_hash, difficulty, output_language, "questions_data", questions)
+
+    def load_questions(self, file_hash: str, difficulty: str, output_language: str) -> list[Question] | None:
+        payload = self._load_material_field(file_hash, difficulty, output_language, "questions_data")
+        return [Question.model_validate(item) for item in payload] if payload is not None else None
+
+    def _save_material_field(
+        self, file_hash: str, difficulty: str, output_language: str, field: str, values: list[Any]
+    ) -> None:
+        if field not in {"concepts_data", "questions_data"}:
+            raise ValueError("지원하지 않는 학습 자료 필드입니다.")
+        key = (file_hash, difficulty, output_language)
+        payload = [value.model_dump(mode="json") if hasattr(value, "model_dump") else value for value in values]
+        data = self._materials.get(key, {})
+        data[field] = payload
+        self._materials[key] = data
+
+    def _load_material_field(
+        self, file_hash: str, difficulty: str, output_language: str, field: str
+    ) -> list[dict[str, Any]] | None:
+        if field not in {"concepts_data", "questions_data"}:
+            raise ValueError("지원하지 않는 학습 자료 필드입니다.")
+        payload = self._materials.get((file_hash, difficulty, output_language), {}).get(field)
+        return payload if payload is not None else None
+
+
 class PostgresSessionStore:
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
@@ -28,6 +101,8 @@ class PostgresSessionStore:
     def from_environment(cls) -> "PostgresSessionStore | None":
         load_dotenv()
         database_url = os.getenv("DATABASE_URL", "").strip()
+        if database_url.lower() in {"memory://", "memory", "mock://", "mock"}:
+            return MemorySessionStore()
         return cls(database_url) if database_url else None
 
     def _connect(self):

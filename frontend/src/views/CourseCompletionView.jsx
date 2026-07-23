@@ -14,7 +14,6 @@ export function CourseCompletionView({ audioSettings, busy, course, onReturnToRo
           audioSettings={audioSettings}
           courseTitle={course?.title}
           progressPercent={100}
-          userLabel="지혜를 찾는 자"
         />
       }
     >

@@ -1,13 +1,6 @@
 import { FileCheck2, FileText, Landmark, Loader2, ShieldCheck, Upload } from "lucide-react";
 import { ScreenShell } from "../components/ScreenShell.jsx";
-import { SlpCorners } from "../components/Ornaments.jsx";
 import { TopBar } from "../components/TopBar.jsx";
-
-const GUIDE_STEPS = [
-  { icon: <Landmark size={20}/>, title: "유세인트 접속", desc: "학교 포털이나 LMS에서 유세인트에 접속합니다." },
-  { icon: <FileText size={20}/>, title: "강의계획서 열기", desc: "강의정보 메뉴에서 강의계획서를 엽니다." },
-  { icon: <FileCheck2 size={20}/>, title: "PDF 저장", desc: "열린 페이지를 PDF로 저장하여 업로드 준비를 완료합니다." },
-];
 
 export function StartView({
   audioSettings,
@@ -29,50 +22,31 @@ export function StartView({
     : "강의계획서를 분석하여 맞춤형 학습 로드맵을 만들어 드립니다.";
   const cardTitle = isWeekMode ? `${weekLabel} 강의 PDF를 업로드하세요` : "강의계획서 PDF를 업로드하세요";
   const submitLabel = isWeekMode ? "학습 시작" : "로드맵 생성";
-  const submitNote = file
-    ? (isWeekMode ? "클릭하여 학습을 시작하세요." : "클릭하여 로드맵 생성을 시작하세요.")
-    : "분석이 완료되면 클릭할 수 있습니다.";
 
   return (
     <ScreenShell
-      className=""
+      className="start-bg"
       topBar={
         <TopBar
           audioSettings={audioSettings}
           onAcademy={onBack}
           academyLabel={isWeekMode ? "로드맵으로" : "메인으로"}
-          userLabel="지혜를 찾는 자"
         />
       }
     >
       <div className="syl-shell">
-        <img src="/theme-assets/socrates-start-new.png" alt="AI 소크라테스" className="syl-portrait"/>
-
         <div className="syl-main">
           <header className="syl-heading">
-            <span>⚜</span><h1>{heading}</h1><span>⚜</span>
+            <h1>{heading}</h1>
             <p>{subtitle}</p>
           </header>
 
           {!isWeekMode && (
-            <div className="syl-guide">
-              <span className="syl-guide-label">업로드 가이드</span>
-              {GUIDE_STEPS.map((step, index) => (
-                <div className="syl-guide-step" key={step.title}>
-                  {index > 0 && <span className="syl-guide-arrow" aria-hidden="true"/>}
-                  <span className="syl-guide-icon">{step.icon}</span>
-                  <div>
-                    <strong>{index + 1} {step.title}</strong>
-                    <p>{step.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <img src="/theme-assets/guide.png" alt="업로드 가이드" className="syl-guide-image"/>
           )}
 
           <div className="syl-body">
-            <section className="slp-panel syl-card">
-              <SlpCorners/>
+            <section className="syl-card">
               <h2 className="syl-card-title">{cardTitle}</h2>
               <p className="syl-card-desc">드래그&드롭 또는 버튼을 클릭하여 파일을 선택하세요.</p>
               {error && <div className="parch-error">{error}</div>}
@@ -84,8 +58,9 @@ export function StartView({
                 </label>
                 <div className="syl-upload-row">
                   <label className="syl-upload-button">
+                    <img src="/theme-assets/basic_button.png" alt="" aria-hidden="true" className="syl-button-image"/>
                     <input type="file" accept="application/pdf,.pdf" onChange={onFileChange}/>
-                    <Upload size={16}/> PDF 업로드
+                    <span className="syl-button-content"><Upload size={16}/> PDF 업로드</span>
                   </label>
                   <span className="syl-filename">{file?.name ?? ""}</span>
                 </div>
@@ -112,16 +87,13 @@ export function StartView({
                   </div>
                 )}
 
-                <button className="srp-submit-button syl-submit" disabled={busy || !file} type="submit">
-                  <svg className="srp-submit-frame" viewBox="0 0 360 58" preserveAspectRatio="none" aria-hidden="true">
-                    <use href="#srpSubmitFrame"/>
-                  </svg>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {busy ? <Loader2 className="spin" size={18}/> : <Landmark size={18}/>}
+                <button className="srp-submit-button syl-submit syl-basic-button" disabled={busy || !file} type="submit">
+                  <img src="/theme-assets/basic_button.png" alt="" aria-hidden="true" className="syl-button-image"/>
+                  <span className="syl-button-content">
+                    {busy ? <Loader2 className="spin" size={18}/> : null}
                     {submitLabel}
                   </span>
                 </button>
-                <p className="syl-submit-note">{submitNote}</p>
               </form>
             </section>
           </div>
