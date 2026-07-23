@@ -17,6 +17,7 @@ import {
   ADMIN_PASSWORD,
   BACKGROUND_MUSIC_SRC,
   BACKGROUND_VOLUME_KEY,
+  BUTTON_HOVER_SOUND_SRC,
   EFFECT_VOLUME_KEY,
   API_BASE,
   initialForm,
@@ -66,13 +67,16 @@ export function App() {
   const [dismissedTransitionAnswerId, setDismissedTransitionAnswerId] = useState(null);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(
-    () => storedVolume(BACKGROUND_VOLUME_KEY, 0.32),
+    () => storedVolume(BACKGROUND_VOLUME_KEY, 0.5),
   );
   const [questionSoundVolume, setQuestionSoundVolume] = useState(
-    () => storedVolume(EFFECT_VOLUME_KEY, 0.72),
+    () => storedVolume(EFFECT_VOLUME_KEY, 0.5),
   );
   const backgroundMusicRef = useRef(null);
   const questionChangeSoundRef = useRef(null);
+  const buttonHoverSoundRef = useRef(null);
+  const weekUploadInputRef = useRef(null);
+  const weekUploadStageRef = useRef(null);
   const previousQuestionIdRef = useRef(null);
 
   useEffect(() => {
@@ -183,6 +187,22 @@ export function App() {
     setPendingCheckpoint(null); setCheckpointVariant(null);
   }
 
+  function returnToMain() {
+    window.localStorage.removeItem(ACTIVE_COURSE_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    setCourse(null);
+    setState(null);
+    setSelectedStage(null);
+    setAnswer("");
+    setError("");
+    setShowContinueList(false);
+    setShowCompletion(false);
+    setCourseSummary(null);
+    setPendingCheckpoint(null);
+    setCheckpointVariant(null);
+    setNewCourseUploadMode(false);
+  }
+
   async function refreshCourse() {
     const courseId = course?.course_id ?? window.localStorage.getItem(ACTIVE_COURSE_KEY);
     if (!courseId) return null;
@@ -197,6 +217,7 @@ export function App() {
     setState(null);
     setSelectedStage(null);
     setCheckpointVariant(null);
+    setPendingCheckpoint(null);
     setAnswer("");
     try {
       const nextCourse = await refreshCourse();
@@ -261,18 +282,13 @@ export function App() {
 
   function openRoadmapStage(stage) {
     setError("");
-    if (stage.kind === "week") {
-      if (stage.session_id) {
-        openExistingSession(stage.session_id, null);
-      } else {
-        setSelectedStage(stage);
-      }
-      return;
-    }
     if (stage.session_id) {
       openExistingSession(stage.session_id, stage.checkpoint_type);
-      return;
     }
+  }
+
+  function actionRoadmapStage(stage) {
+    setError("");
     if (stage.checkpoint_type === "midterm") {
       setPendingCheckpoint(stage);
     } else {
@@ -280,14 +296,41 @@ export function App() {
     }
   }
 
+  function promptRoadmapPdfUpload(stage) {
+    weekUploadStageRef.current = stage;
+    setError("");
+    weekUploadInputRef.current?.click();
+  }
+
+  async function handleRoadmapPdfChange(event) {
+    const selected = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!selected) return;
+    if (selected.size > MAX_PDF_BYTES) {
+      setError("PDF 파일은 최대 25MB까지 업로드할 수 있습니다.");
+      return;
+    }
+    const stage = weekUploadStageRef.current;
+    if (!stage) {
+      setError("업로드할 학습 단계를 찾지 못했습니다.");
+      return;
+    }
+    setFile(selected);
+    await submitSessionUpload(selected, stage);
+  }
+
   useEffect(() => {
     const backgroundMusic = new Audio(BACKGROUND_MUSIC_SRC);
     const questionChangeSound = new Audio(QUESTION_CHANGE_SOUND_SRC);
+    const buttonHoverSound = new Audio(BUTTON_HOVER_SOUND_SRC);
     backgroundMusic.loop = true;
     backgroundMusic.volume = backgroundMusicVolume;
     questionChangeSound.volume = questionSoundVolume;
+    buttonHoverSound.volume = questionSoundVolume;
+    buttonHoverSound.preload = "auto";
     backgroundMusicRef.current = backgroundMusic;
     questionChangeSoundRef.current = questionChangeSound;
+    buttonHoverSoundRef.current = buttonHoverSound;
     const startBackgroundMusic = () => { backgroundMusic.play().catch(() => {}); };
     window.addEventListener("pointerdown", startBackgroundMusic, { once: true });
     window.addEventListener("keydown", startBackgroundMusic, { once: true });
@@ -297,6 +340,7 @@ export function App() {
       backgroundMusic.pause();
       backgroundMusicRef.current = null;
       questionChangeSoundRef.current = null;
+      buttonHoverSoundRef.current = null;
     };
   }, []);
 
@@ -307,8 +351,16 @@ export function App() {
 
   useEffect(() => {
     if (questionChangeSoundRef.current) questionChangeSoundRef.current.volume = questionSoundVolume;
+    if (buttonHoverSoundRef.current) buttonHoverSoundRef.current.volume = questionSoundVolume;
     window.localStorage.setItem(EFFECT_VOLUME_KEY, String(questionSoundVolume));
   }, [questionSoundVolume]);
+
+  function playButtonHoverSound() {
+    const hoverSound = buttonHoverSoundRef.current;
+    if (!hoverSound) return;
+    hoverSound.currentTime = 0;
+    hoverSound.play().catch(() => {});
+  }
 
   const visibleQuestionId = state?.last_answer?.question_id === state?.current_question?.question_id
     ? state?.last_answer?.question_id
@@ -326,20 +378,19 @@ export function App() {
     questionChangeSound.play().catch(() => {});
   }, [visibleQuestionId]);
 
-  async function startSession(event) {
-    event.preventDefault();
-    if (!file) { setError("학습할 PDF를 선택해주세요."); return; }
+  async function submitSessionUpload(selectedFile, stage = null) {
+    if (!selectedFile) { setError("학습할 PDF를 선택해주세요."); return; }
     setBusy(true); setError(""); setLoadingSteps([]);
 
     const payload = new FormData();
-    payload.append("pdf", file);
+    payload.append("pdf", selectedFile);
     payload.append("difficulty", form.difficulty);
     payload.append("output_language", form.outputLanguage);
     payload.append("session_mode", form.sessionMode);
-    if (course?.course_id && selectedStage) {
+    if (course?.course_id && stage) {
       payload.set("session_mode", "study");
       payload.append("course_id", course.course_id);
-      payload.append("stage_index", String(selectedStage.stage_index));
+      payload.append("stage_index", String(stage.stage_index));
     }
     if (form.model) payload.append("model", form.model);
 
@@ -413,6 +464,11 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function startSession(event) {
+    event.preventDefault();
+    await submitSessionUpload(file, selectedStage);
   }
 
   function selectPdf(event) {
@@ -506,20 +562,20 @@ export function App() {
         {showContinueList ? (
           <ContinueCourseView
             audioSettings={audioSettings}
-            busy={busy}
             courses={courses}
             error={error}
-            onBack={() => setShowContinueList(false)}
+            onMain={returnToMain}
             onOpenCourse={openCourseFromContinue}
           />
         ) : (
-          <TitleView
-            audioSettings={audioSettings}
-            busy={busy}
-            error={error}
-            onStartNew={beginNewCourseUpload}
-            onContinue={() => setShowContinueList(true)}
-          />
+        <TitleView
+          audioSettings={audioSettings}
+          busy={busy}
+          error={error}
+          onButtonHover={playButtonHoverSound}
+          onStartNew={beginNewCourseUpload}
+          onContinue={() => setShowContinueList(true)}
+        />
         )}
       </>
     );
@@ -549,7 +605,8 @@ export function App() {
           busy={busy}
           course={course}
           progress={courseProgressPercent(course)}
-          onLater={() => setPendingCheckpoint(null)}
+          onAcademy={returnToRoadmap}
+          onStartHover={playButtonHoverSound}
           onStart={() => startCheckpoint(pendingCheckpoint)}
         />
       </>
@@ -560,6 +617,13 @@ export function App() {
     return (
       <>
         <SvgDefs/>
+        <input
+          ref={weekUploadInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={handleRoadmapPdfChange}
+          style={{ display: "none" }}
+        />
         <RoadmapView
           audioSettings={audioSettings}
           busy={busy}
@@ -567,6 +631,8 @@ export function App() {
           error={error}
           onBack={returnToLibrary}
           onOpenStage={openRoadmapStage}
+          onActionStage={actionRoadmapStage}
+          onUploadStagePdf={promptRoadmapPdfUpload}
         />
       </>
     );

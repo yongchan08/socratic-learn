@@ -1,6 +1,7 @@
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 export const BACKGROUND_MUSIC_SRC = "/audio/background_music.mp3";
 export const QUESTION_CHANGE_SOUND_SRC = "/audio/page-turn.mp3";
+export const BUTTON_HOVER_SOUND_SRC = "/audio/button_hover_sound.mp3";
 export const MAX_ATTEMPTS_PER_QUESTION = 3;
 export const MAX_PDF_BYTES = 25 * 1024 * 1024;
 export const ACTIVE_SESSION_KEY = "socratic_tutor_active_session_id";
