@@ -91,6 +91,8 @@ def create_course_from_syllabus(
         return manager.create_course_from_syllabus(target, title=title)
     except WebStudyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=format_pipeline_error(exc)) from exc
     finally:
