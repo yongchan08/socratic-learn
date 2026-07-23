@@ -1,4 +1,4 @@
-import { AlertTriangle, GraduationCap, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { ScreenShell } from "../components/ScreenShell.jsx";
 import { TopBar } from "../components/TopBar.jsx";
 
@@ -207,9 +207,8 @@ export function RoadmapView({
                   <p className="parch-upload-desc">
                     지금까지 배운 개념들을 스스로의 언어로 다시 설명하며 이해를 점검합니다.
                   </p>
-                  <button type="button" className="srp-submit-button" disabled={busy} onClick={() => onActionStage(nextStage)}>
-                    <svg className="srp-submit-frame" viewBox="0 0 360 58" preserveAspectRatio="none" aria-hidden="true"><use href="#srpSubmitFrame"/></svg>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}><GraduationCap size={17}/> 시작하기</span>
+                  <button type="button" className="srp-submit-button srp-submit-button--basic" disabled={busy} onClick={() => onActionStage(nextStage)}>
+                    <span>시작하기</span>
                   </button>
                 </>
               )
