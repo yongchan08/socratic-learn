@@ -107,7 +107,7 @@ export function RoadmapView({
           {error && <div className="roadmap-error">{error}</div>}
           <div className="rmw-map">
             <img
-              src="/theme-assets/roadmap.png"
+              src="/theme-assets/roadmap.webp"
               alt="학습 로드맵"
               className="rmw-map-image"
               draggable="false"

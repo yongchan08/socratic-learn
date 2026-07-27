@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { AdminLoginView } from "./views/AdminLoginView.jsx";
 import { CheckpointIntroView } from "./views/CheckpointIntroView.jsx";
 import { ConceptCheckpointView } from "./views/ConceptCheckpointView.jsx";
 import { ContinueCourseView } from "./views/ContinueCourseView.jsx";
@@ -13,8 +12,6 @@ import { SvgDefs } from "./components/Ornaments.jsx";
 import {
   ACTIVE_COURSE_KEY,
   ACTIVE_SESSION_KEY,
-  ADMIN_AUTH_KEY,
-  ADMIN_PASSWORD,
   BACKGROUND_MUSIC_SRC,
   BACKGROUND_VOLUME_KEY,
   BUTTON_HOVER_SOUND_SRC,
@@ -43,11 +40,6 @@ function isCourseComplete(courseObj) {
 }
 
 export function App() {
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
-    () => window.sessionStorage.getItem(ADMIN_AUTH_KEY) === "true",
-  );
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminError, setAdminError] = useState("");
   const [file, setFile] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [state, setState] = useState(null);
@@ -80,7 +72,6 @@ export function App() {
   const previousQuestionIdRef = useRef(null);
 
   useEffect(() => {
-    if (!isAdminAuthenticated) return;
     fetch(`${API_BASE}/api/health`, { cache: "no-store" }).catch(() => {});
     const existingCourseId = window.localStorage.getItem(ACTIVE_COURSE_KEY);
     fetch(`${API_BASE}/api/courses`)
@@ -118,19 +109,7 @@ export function App() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setBusy(false));
-  }, [isAdminAuthenticated]);
-
-  function submitAdminPassword(event) {
-    event.preventDefault();
-    if (adminPassword !== ADMIN_PASSWORD) {
-      setAdminError("비밀번호가 올바르지 않습니다.");
-      return;
-    }
-    window.sessionStorage.setItem(ADMIN_AUTH_KEY, "true");
-    setIsAdminAuthenticated(true);
-    setAdminPassword("");
-    setAdminError("");
-  }
+  }, []);
 
   function beginNewCourseUpload() {
     setFile(null); setError("");
@@ -518,24 +497,6 @@ export function App() {
       onQuestionSoundVolumeChange={setQuestionSoundVolume}
     />
   );
-
-  if (!isAdminAuthenticated) {
-    return (
-      <>
-        <SvgDefs/>
-        <AdminLoginView
-          audioSettings={audioSettings}
-          adminPassword={adminPassword}
-          adminError={adminError}
-          onPasswordChange={(event) => {
-            setAdminPassword(event.target.value);
-            if (adminError) setAdminError("");
-          }}
-          onSubmit={submitAdminPassword}
-        />
-      </>
-    );
-  }
 
   if (!state && !course) {
     if (newCourseUploadMode) {

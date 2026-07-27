@@ -17,7 +17,7 @@ export function CheckpointIntroView({ audioSettings, busy, course, progress, onA
     >
       <div className="ckp-clean">
         <img
-          src="/theme-assets/feynman_session.png"
+          src="/theme-assets/feynman_session.webp"
           alt="feynman_session"
           className="ckp-clean-image"
         />

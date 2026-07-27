@@ -52,12 +52,12 @@ h1, h2, h3, p { margin-top: 0; }
   position: relative; width: 100%; height: 100vh;
   min-width: 1024px; min-height: 680px; overflow: hidden;
   background-color: var(--ink-0);
-  background-image: url("/theme-assets/background/background.png");
+  background-image: url("/theme-assets/background/background.webp");
   background-size: cover; background-position: center;
   border: 1px solid #3a2c18;
 }
 .title-bg {
-  background-image: url("/theme-assets/background/title_background.png");
+  background-image: url("/theme-assets/background/title_background.webp");
   background-size: cover;
   background-position: center;
 }
@@ -76,7 +76,7 @@ h1, h2, h3, p { margin-top: 0; }
   -webkit-backdrop-filter: blur(5px);
 }
 .start-bg {
-  background-image: url("/theme-assets/background/guide_bg.png");
+  background-image: url("/theme-assets/background/guide_bg.webp");
   background-size: cover;
   background-position: center;
 }
@@ -91,7 +91,7 @@ h1, h2, h3, p { margin-top: 0; }
   -webkit-backdrop-filter: blur(4px);
 }
 .continue-bg {
-  background-image: url("/theme-assets/background/guide_bg.png");
+  background-image: url("/theme-assets/background/guide_bg.webp");
   background-size: cover;
   background-position: center;
 }
@@ -101,7 +101,7 @@ h1, h2, h3, p { margin-top: 0; }
   -webkit-backdrop-filter: blur(5px);
 }
 .concept-feynman-bg {
-  background-image: url("/theme-assets/background/feynman_bg.png");
+  background-image: url("/theme-assets/background/feynman_bg.webp");
   background-size: cover;
   background-position: center;
 }
@@ -150,7 +150,7 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 38px 42px 42px;
   color: #27180a;
   background:
-    url("/theme-assets/background/parchment.png") center center / 100% 100% no-repeat;
+    url("/theme-assets/background/parchment.webp") center center / 100% 100% no-repeat;
   border: 0;
   box-shadow: none;
 }
@@ -865,7 +865,7 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 58px 64px 36px;
   color: #27180a;
   background:
-    url("/theme-assets/background/parchment.png") center center / 100% 100% no-repeat;
+    url("/theme-assets/background/parchment.webp") center center / 100% 100% no-repeat;
   border: 0;
   box-shadow: none;
   position: relative;
@@ -1086,41 +1086,6 @@ h1, h2, h3, p { margin-top: 0; }
 .loading-step-label {
   flex: 1; min-width: 0;
 }
-
-/* ── Course roadmap ───────────────────────────── */
-
-.admin-login-shell {
-  flex: 1; min-height: 0; display: grid; place-items: center;
-  padding: 42px 24px;
-}
-.admin-login-card {
-  width: min(440px, 100%); padding: 42px 46px; text-align: center;
-  color: #2a1a0a; border: 2px solid #6d4b20; border-radius: 14px;
-  background: linear-gradient(180deg, rgba(244,228,190,.98), rgba(207,177,119,.98));
-  box-shadow: inset 0 0 0 5px rgba(96,63,24,.16), 0 18px 48px rgba(0,0,0,.58);
-}
-.admin-login-icon { color: #79551f; margin-bottom: 10px; }
-.admin-login-eyebrow {
-  display: block; color: #8b642b; font-size: 12px; font-weight: 800;
-  letter-spacing: .16em;
-}
-.admin-login-card h1 { margin: 8px 0 10px; font-size: 30px; }
-.admin-login-card > p { margin: 0 0 28px; color: #62451f; line-height: 1.6; }
-.admin-login-card form { display: grid; gap: 10px; text-align: left; }
-.admin-login-card label { font-size: 13px; font-weight: 750; color: #503617; }
-.admin-login-card input {
-  width: 100%; box-sizing: border-box; padding: 13px 14px;
-  border: 1px solid #8a652f; border-radius: 4px; background: rgba(255,250,231,.72);
-  color: #241607; font: inherit; outline: none;
-}
-.admin-login-card input:focus { border-color: #4e3516; box-shadow: 0 0 0 3px rgba(117,82,34,.18); }
-.admin-login-card button {
-  margin-top: 6px; padding: 13px 16px; border: 1px solid #3c2811; border-radius: 4px;
-  background: linear-gradient(180deg, #76552a, #3f2a13); color: #f5e7c2;
-  font: inherit; font-weight: 780; cursor: pointer;
-}
-.admin-login-card button:disabled { cursor: not-allowed; opacity: .5; }
-.admin-login-error { margin: 0; color: #8c2525; font-size: 13px; font-weight: 700; }
 
 .rmw-shell {
   flex: 1; min-height: 0; display: flex; gap: 22px; align-items: flex-start;
@@ -1420,7 +1385,7 @@ h1, h2, h3, p { margin-top: 0; }
 .ckp-clean-shell {
   flex: 1;
   min-height: 0;
-  background-image: url("/theme-assets/background/feynman_bg.png");
+  background-image: url("/theme-assets/background/feynman_bg.webp");
   background-size: cover;
   background-position: center;
 }
@@ -1687,7 +1652,7 @@ h1, h2, h3, p { margin-top: 0; }
   border-radius: 14px;
   display: flex;
   flex-direction: column;
-  background: url("/theme-assets/roadamp_list.png") center center / 100% 100% no-repeat;
+  background: url("/theme-assets/roadamp_list.webp") center center / 100% 100% no-repeat;
   box-shadow: none;
 }
 .ctn-map {
