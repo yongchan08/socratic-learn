@@ -209,7 +209,7 @@ def extract_or_load_concepts(
     concepts = []
     for index, item in enumerate(raw_concepts[:MAX_CONCEPTS], start=1):
         item = dict(item)
-        item["concept_id"] = f"concept_{index:03d}"
+        item["concept_id"] = f"{parsed_doc.document_id}_{config.difficulty}_{config.output_language}_c{index:03d}"
         concepts.append(Concept.model_validate(item))
 
     if material_store is not None:
@@ -272,7 +272,7 @@ def generate_or_load_questions(
             item = dict(item)
             _assign_required_point_ids(item)
             item["concept_id"] = concept.concept_id
-            item["question_id"] = f"q_{concept_index:03d}_{question_index:03d}"
+            item["question_id"] = f"{concept.concept_id}_q{question_index:03d}"
             question = Question.model_validate(item)
             qs.append(question)
         _validate_question_mix(qs)

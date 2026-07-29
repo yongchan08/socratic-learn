@@ -286,18 +286,17 @@ class WebStudyManager:
 
         concepts: list = []
         questions: list[Question] = []
+        seen_concepts = set()
+        seen_questions = set()
         for source_stage, stored in zip(source_stages, stored_stages):
-            prefix = f"stage_{source_stage['stage_index']}_"
-            concept_ids = {}
             for concept in stored.session.concepts:
-                new_id = f"{prefix}{concept.concept_id}"
-                concept_ids[concept.concept_id] = new_id
-                concepts.append(concept.model_copy(update={"concept_id": new_id}))
+                if concept.concept_id not in seen_concepts:
+                    seen_concepts.add(concept.concept_id)
+                    concepts.append(concept)
             for question in stored.session.questions:
-                questions.append(question.model_copy(update={
-                    "question_id": f"{prefix}{question.question_id}",
-                    "concept_id": concept_ids[question.concept_id],
-                }))
+                if question.question_id not in seen_questions:
+                    seen_questions.add(question.question_id)
+                    questions.append(question)
 
         first = stored_stages[0]
         session = StudySession(

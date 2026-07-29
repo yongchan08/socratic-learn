@@ -168,6 +168,8 @@ class PostgresSessionStore:
             if db_session.config_data is None:
                 db_session.config_data = {}
             db_session.config_data["current_index"] = stored.current_index
+            db_session.config_data["concept_ids"] = [c.concept_id for c in stored.session.concepts]
+            db_session.config_data["question_ids"] = [q.question_id for q in stored.session.questions]
             
             db_session.summary_data = stored.session.summary.model_dump(mode="json") if stored.session.summary else None
 
@@ -230,12 +232,18 @@ class PostgresSessionStore:
             if not db_session:
                 return None
             
-            # Fetch concept and question data dynamically based on the original document
-            db_concepts = session.query(ConceptDB).filter_by(
-                document_id=db_session.document_id,
-                difficulty=db_session.difficulty,
-                output_language=db_session.output_language
-            ).all()
+            # Fetch concept and question data dynamically based on the original document or config
+            if db_session.config_data and "concept_ids" in db_session.config_data:
+                concept_ids = db_session.config_data["concept_ids"]
+                db_concepts = session.query(ConceptDB).filter(ConceptDB.concept_id.in_(concept_ids)).all()
+                c_dict = {c.concept_id: c for c in db_concepts}
+                db_concepts = [c_dict[cid] for cid in concept_ids if cid in c_dict]
+            else:
+                db_concepts = session.query(ConceptDB).filter_by(
+                    document_id=db_session.document_id,
+                    difficulty=db_session.difficulty,
+                    output_language=db_session.output_language
+                ).all()
             
             concepts = [
                 Concept(
@@ -248,9 +256,15 @@ class PostgresSessionStore:
                 ) for c in db_concepts
             ]
             
-            db_questions = session.query(QuestionDB).filter(
-                QuestionDB.concept_id.in_([c.concept_id for c in concepts])
-            ).options(joinedload(QuestionDB.required_points)).all()
+            if db_session.config_data and "question_ids" in db_session.config_data:
+                question_ids = db_session.config_data["question_ids"]
+                db_questions = session.query(QuestionDB).filter(QuestionDB.question_id.in_(question_ids)).options(joinedload(QuestionDB.required_points)).all()
+                q_dict = {q.question_id: q for q in db_questions}
+                db_questions = [q_dict[qid] for qid in question_ids if qid in q_dict]
+            else:
+                db_questions = session.query(QuestionDB).filter(
+                    QuestionDB.concept_id.in_([c.concept_id for c in concepts])
+                ).options(joinedload(QuestionDB.required_points)).all()
             
             questions = [
                 Question(
