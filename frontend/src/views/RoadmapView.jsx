@@ -61,6 +61,13 @@ export function RoadmapView({
   onUploadStagePdf,
   onOpenStage,
 }) {
+  function handleStageClick(stage) {
+    if (stage.kind === "checkpoint" && !stage.session_id) {
+      onActionStage(stage);
+    } else {
+      onOpenStage(stage);
+    }
+  }
   const stages = course?.stages ?? [];
   const completed = stages.filter((stage) => stage.completed).length;
   const totalNodes = stages.length + 1;
@@ -142,8 +149,8 @@ export function RoadmapView({
                     className={`rmw-node-wrap ${isCheckpoint ? "rmw-node-wrap--checkpoint" : ""}`}
                     style={position}
                     title={`${stage.title} · ${stageDetail}`}
-                    disabled={status === "locked" || busy || !stage.session_id}
-                    onClick={() => onOpenStage(stage)}
+                    disabled={status === "locked" || busy}
+                    onClick={() => handleStageClick(stage)}
                   >
                     <span className="rmw-node-badge">{stageBadgeLabel(stage, index, stages)}</span>
                     <span className={`rmw-node is-${status} ${isCheckpoint ? "rmw-node--checkpoint" : ""}`}>

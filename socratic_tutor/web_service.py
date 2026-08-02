@@ -301,7 +301,7 @@ class WebStudyManager:
         first = stored_stages[0]
         session = StudySession(
             session_id=f"checkpoint_{utc_now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}",
-            document_id=course_id,
+            document_id=first.session.document_id,
             difficulty=first.session.difficulty,
             output_language=first.session.output_language,
             concepts=concepts,
