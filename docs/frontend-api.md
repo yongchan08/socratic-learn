@@ -2,6 +2,47 @@
 
 이 문서는 프론트엔드가 사용하는 API와 소크라테스 학습 기능(`study`), 파인만 학습 기능(`concept_review`)의 요청별 동작을 설명한다. 공통 데이터 모델과 두 학습 기능의 데이터 흐름은 [a-b-data-flow.md](./a-b-data-flow.md)를 참고한다.
 
+## 아키텍처
+
+```mermaid
+flowchart TB
+    subgraph Browser["브라우저"]
+        FE["React 프론트엔드\n(frontend/src)"]
+    end
+
+    subgraph RenderService["FastAPI 서버 (web_app.py) · 단일 Render 웹 서비스"]
+        API["REST + SSE 엔드포인트\n/api/*"]
+        Static["StaticFiles\nfrontend/dist"]
+        WSM["WebStudyManager\nweb_service.py"]
+        Pipeline["파이프라인\npipeline.py, pdf_parser.py"]
+        LLMClient["LLMClient\nllm_client.py"]
+    end
+
+    OpenAI["OpenAI-compatible API\n(OPENAI_BASE_URL)"]
+    DB[("PostgreSQL\nlearning_documents / learning_materials\nweb_study_sessions / learning_courses")]
+    Files[("파일 시스템\noutputs/, cache/, uploads/\n(DATABASE_URL 미설정 시 대체)")]
+
+    FE -- "HTTP / SSE\nAPI_BASE" --> API
+    API -- "프로덕션 빌드 서빙" --- Static
+    API --> WSM
+    WSM --> Pipeline
+    Pipeline --> LLMClient
+    LLMClient -- HTTPS --> OpenAI
+    WSM -- "DATABASE_URL 설정 시" --> DB
+    WSM -- "DATABASE_URL 미설정 시" --> Files
+
+    subgraph CLI["CLI · cli.py"]
+        CLICmd["socratic-tutor start / parse / inspect / concept-review"]
+    end
+    CLICmd --> Pipeline
+    CLICmd -- "항상 파일로 저장" --> Files
+```
+
+- 프론트엔드는 개발 중에는 Vite 개발 서버(`5173`)에서, 배포 시에는 FastAPI가 `frontend/dist`를 `StaticFiles`로 직접 서빙하며 같은 Render 웹 서비스 안에서 함께 뜬다.
+- `web_app.py`의 엔드포인트는 로직을 직접 구현하지 않고 `WebStudyManager`에 위임하며([9. API와 WebStudyManager의 연결](#9-api와-webstudymanager의-연결) 참고), `WebStudyManager`는 PDF 파싱·Concept/Question 생성을 `pipeline.py`에 맡긴다.
+- `pipeline.py`는 필요할 때만 `LLMClient`를 통해 OpenAI-compatible API를 호출하며, 결과는 `DATABASE_URL` 설정 여부에 따라 PostgreSQL 또는 로컬 파일(`outputs/`, `cache/`)에 저장된다.
+- CLI는 웹과 같은 파이프라인·LLM 클라이언트를 재사용하지만 항상 로컬 파일 저장소만 사용하고 PostgreSQL에는 접근하지 않는다.
+
 프론트엔드는 FastAPI 서버와 HTTP 및 SSE(Server-Sent Events)로 통신한다. API 기본 주소는 프론트엔드의 `API_BASE` 설정을 사용한다.
 
 현재 프론트엔드가 직접 호출하는 API는 다음과 같다.
